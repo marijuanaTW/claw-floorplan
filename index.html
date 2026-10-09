@@ -42,7 +42,24 @@
   .machine.st-repair{background:#ede4ff;border-color:#8b5cf6;border-style:dashed}   /* 維修中：紫色虛線 */
   .machine.st-vacant{background:#fdba74;border-color:#ea580c;color:#1f1300}         /* 待承租：橘色 */
   .machine.st-vacant .owner, .machine.st-vacant .owner span{color:#5a2a00 !important}
+  .floor.compact .machine .no{font-size:3.4cqw} .floor.compact .machine .pay{font-size:2.3cqw;padding:0.2cqw 0.9cqw}
+  .floor.compact .machine .owner{font-size:2.6cqw} .floor.compact .machine .top{gap:0.8cqw}
   .machine.big .no{font-size:4.5cqw} .machine.big .owner{font-size:3.4cqw} .machine.big .pay{font-size:3cqw}
+  .area{pointer-events:none;border-radius:0;z-index:0;font-weight:800;line-height:1}
+  .blocklbl{cursor:default;z-index:1;font-weight:800;border-radius:0.6cqw}
+  .machine,.exchanger{z-index:2}
+  .menu-btn{font-size:20px;line-height:1;padding:4px 10px;margin-right:6px}
+  .drawer-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:35;display:none}
+  .drawer-bg.open{display:block}
+  .drawer{position:fixed;top:0;left:0;bottom:0;width:min(80vw,300px);background:var(--panel);border-right:1px solid var(--line);
+    z-index:36;transform:translateX(-102%);transition:transform .2s;padding:14px;display:flex;flex-direction:column;gap:10px}
+  .drawer.open{transform:none}
+  .drawer h3{margin:0 0 4px;font-size:15px;color:var(--muted)}
+  .venue{display:flex;align-items:center;gap:6px;padding:10px;border:1px solid var(--line);border-radius:10px;cursor:pointer;background:#0f1318}
+  .venue.cur{border-color:var(--accent);background:#14233d}
+  .venue .vn{flex:1;font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .venue .vc{font-size:11px;color:var(--muted)}
+  .venue button{font-size:12px;padding:4px 8px}
   .exchanger{background:var(--exch);color:#fff;font-weight:800;font-size:3.6cqw;border:0.5cqw solid #ff6b6b;cursor:default;letter-spacing:.1em}
   /* modal */
   .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:20;padding:12px}
@@ -103,7 +120,7 @@
 <body>
 <header>
   <div class="bar">
-    <h1>🧸 娃娃機台平面圖</h1>
+    <h1 style="display:flex;align-items:center"><button class="menu-btn" id="btnMenu" aria-label="切換場地">☰</button><span id="venueTitle">🧸 娃娃機台平面圖</span></h1>
     <div class="actions">
       <button id="btnSaveAll" class="primary" title="把所有機台資料重新寫入雲端（合併，不會刪資料）">全部儲存</button>
       <button id="btnExport">匯出 JSON</button>
@@ -133,7 +150,7 @@
   <div class="banner" id="banner">⚠️ 尚未設定雲端（firebaseConfig），目前為「僅本機」模式，資料只存在這台裝置。</div>
 </header>
 <main><div class="floor" id="floor"></div>
-  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10f・共 <span id="verN"></span> 台</div></main>
+  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10g・共 <span id="verN"></span> 台</div></main>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal" role="dialog" aria-modal="true">
@@ -169,6 +186,13 @@
 </div>
 <div class="toast" id="toast"></div>
 
+<div class="drawer-bg" id="drawerBg"></div>
+<nav class="drawer" id="drawer" aria-label="場地選單">
+  <div style="display:flex;align-items:center;justify-content:space-between"><b style="font-size:17px">🧸 場地</b><button id="btnMenuClose">✕</button></div>
+  <h3>點選切換場地；「改名」可修改名稱（存到雲端）</h3>
+  <div id="venueList" style="display:flex;flex-direction:column;gap:8px"></div>
+</nav>
+
 <div class="login-bg" id="loginBg">
   <div class="login">
     <h2>🧸 娃娃機台平面圖</h2>
@@ -196,7 +220,7 @@ const firebaseConfig = {
 };
 // 允許的帳號（只影響畫面提示；真正的權限由 firestore.rules 決定，兩邊要一致）
 const OWNER_EMAILS = ["qew59601211@gmail.com"];
-const FIRESTORE_DOC = ["floorplans", "main"];   // 所有機台資料存在這一份文件
+// 每個場地一份文件：floorplans/main（來都來了）、floorplans/venue2（大寮貓抓）；場地名稱在 floorplans/_meta
 const FB_VER = "13.0.0";
 /* ===================================================================== */
 
@@ -204,46 +228,101 @@ const CLOUD = !Object.values(firebaseConfig).some(v => String(v).includes("PASTE
 const LOCAL_KEY = 'clawFloorplan.v1';            // 僅本機模式 / 舊資料
 const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取（登出時清除）
 
-  // 座標系：寬 400 × 高 H（依照手繪佈局圖排列；所有機台皆為正方形）
-  const W = 400, S = 74, BIG = 104, GAP = 5;   // S=一般機台邊長, BIG=右下大型機邊長
-  const layout = [];   // {type:'machine'|'exchanger', x,y,w,h, big}
-  function column(x, y0, n, size=S, opts={}){
-    for(let i=0;i<n;i++) layout.push({type:'machine', x, y:y0 + i*(size+GAP), w:size, h:size, big:!!opts.big});
-    return y0 + n*(size+GAP);   // 下一個可用 y
+  // ===================== 場地 =====================
+  // 每個場地有自己的 Firestore 文件與本機快取；場地名稱存在 floorplans/_meta
+  const VENUES = [
+    {id:'main',   doc:'main',   defaultName:'來都來了', build: buildLayoutMain, localKey:LOCAL_KEY, cacheKey:CACHE_KEY},
+    {id:'venue2', doc:'venue2', defaultName:'大寮貓抓', build: buildLayoutVenue2, localKey:LOCAL_KEY+'.venue2', cacheKey:CACHE_KEY+'.venue2'},
+  ];
+  const VENUE_KEY = 'clawFloorplan.venue';
+  const NAMES_KEY = 'clawFloorplan.venueNames';
+  const VENUE = VENUES.find(v=>v.id===localStorage.getItem(VENUE_KEY)) || VENUES[0];
+  let venueNames = {}; try{ venueNames = JSON.parse(localStorage.getItem(NAMES_KEY))||{}; }catch(e){}
+  const venueName = v => (venueNames[v.id] || v.defaultName);
+  const {layout, W, H, floorBg} = VENUE.build();
+
+  // ---- 場地一「來都來了」：座標系寬 400（所有機台皆為正方形）----
+  function buildLayoutMain(){
+    const W = 400, S = 74, BIG = 104, GAP = 5;   // S=一般機台邊長, BIG=右下大型機邊長
+    const layout = [];   // {type:'machine'|'exchanger', x,y,w,h, big}
+    function column(x, y0, n, size=S, opts={}){
+      for(let i=0;i<n;i++) layout.push({type:'machine', x, y:y0 + i*(size+GAP), w:size, h:size, big:!!opts.big});
+      return y0 + n*(size+GAP);   // 下一個可用 y
+    }
+    const LX = 18, CX = (W-S)/2, RX = W-18-S;
+    // 左排：8 台 → 兌幣機 → 5 台
+    let y = column(LX, 92, 8);
+    layout.push({type:'exchanger', x:LX-8, y:y+3, w:S+16, h:56});
+    column(LX, y+67, 5);
+    // 中間：4 組上下相疊的 2 台
+    // 4 組平均分布：從上方靠牆機台下方，到左排「兌幣機下方第 4 台」底部為止，組與組間距相等
+    { const left = layout.filter(l=>l.type==='machine');
+      const top = 150, bottom = left[11].y + S, pairH = 2*S + GAP;
+      const gap = (bottom - top - 4*pairH) / 3;
+      for(let k=0;k<4;k++) column(CX, top + k*(pairH+gap), 2); }
+    // 右排：7 台 → 兌幣機 → 5 台 → 2 台大型機
+    y = column(RX, 122, 7);
+    layout.push({type:'exchanger', x:RX-8, y:y+3, w:S+16, h:56});
+    const slot39 = {x:RX, y:y+67};             // 預留：兌幣機正下方給後來新增的 #39（預設編號 28）
+    y = column(RX, y+67+S+GAP, 5);
+    y = column(W-12-BIG, y+3, 2, BIG, {big:true});
+    // 上方靠牆：3 台並排（放在陣列最後 → 編號 36–38，不影響既有資料順序）
+    { const n=3, x0=(W-(n*S+(n-1)*GAP))/2;
+      for(let i=0;i<n;i++) layout.push({type:'machine', x:x0+i*(S+GAP), y:6, w:S, h:S}); }
+    // 後來新增（放在陣列最後 → 內部位置 #39、#40，不影響既有資料）
+    { const ms = layout.filter(l=>l.type==='machine');
+      const leftLast = ms[12];   // 左排最下面一台
+      layout.push({type:'machine', x:slot39.x, y:slot39.y, w:S, h:S});   // #39：右排兌幣機正下方、29 號上方（預設編號 28）
+      layout.push({type:'machine', x:leftLast.x, y:leftLast.y+S+GAP, w:S, h:S});    // #40：左排最下面一台的正下方（預設編號 2）
+    }
+    const H = Math.max(...layout.map(l=>l.y+l.h)) + 6;   // 平面圖高度 = 最下方物件 + 邊距
+
+
+    // 新增機台的預設顯示編號（可重複，可在後台修改）
+    const ms = layout.filter(l=>l.type==='machine'); ms[38].no = '28'; ms[39].no = '2';
+    return {layout, W, H, floorBg:'#0b0d10'};
   }
-  const LX = 18, CX = (W-S)/2, RX = W-18-S;
-  // 左排：8 台 → 兌幣機 → 5 台
-  let y = column(LX, 92, 8);
-  layout.push({type:'exchanger', x:LX-8, y:y+3, w:S+16, h:56});
-  column(LX, y+67, 5);
-  // 中間：4 組上下相疊的 2 台
-  // 4 組平均分布：從上方靠牆機台下方，到左排「兌幣機下方第 4 台」底部為止，組與組間距相等
-  { const left = layout.filter(l=>l.type==='machine');
-    const top = 150, bottom = left[11].y + S, pairH = 2*S + GAP;
-    const gap = (bottom - top - 4*pairH) / 3;
-    for(let k=0;k<4;k++) column(CX, top + k*(pairH+gap), 2); }
-  // 右排：7 台 → 兌幣機 → 5 台 → 2 台大型機
-  y = column(RX, 122, 7);
-  layout.push({type:'exchanger', x:RX-8, y:y+3, w:S+16, h:56});
-  const slot39 = {x:RX, y:y+67};             // 預留：兌幣機正下方給後來新增的 #39（預設編號 28）
-  y = column(RX, y+67+S+GAP, 5);
-  y = column(W-12-BIG, y+3, 2, BIG, {big:true});
-  // 上方靠牆：3 台並排（放在陣列最後 → 編號 36–38，不影響既有資料順序）
-  { const n=3, x0=(W-(n*S+(n-1)*GAP))/2;
-    for(let i=0;i<n;i++) layout.push({type:'machine', x:x0+i*(S+GAP), y:6, w:S, h:S}); }
-  // 後來新增（放在陣列最後 → 內部位置 #39、#40，不影響既有資料）
-  { const ms = layout.filter(l=>l.type==='machine');
-    const leftLast = ms[12];   // 左排最下面一台
-    layout.push({type:'machine', x:slot39.x, y:slot39.y, w:S, h:S});   // #39：右排兌幣機正下方、29 號上方（預設編號 28）
-    layout.push({type:'machine', x:leftLast.x, y:leftLast.y+S+GAP, w:S, h:S});    // #40：左排最下面一台的正下方（預設編號 2）
+
+  // ---- 場地二「大寮貓抓」：依照配置圖（藍＝室外、綠＝室內）----
+  function buildLayoutVenue2(){
+    const W = 400, S = 62, G = 3;
+    const OUT = '#4472c4', IN = '#c5e0b4', LINE = '#2f5597', RED = '#d21f1f';
+    const layout = [];
+    const area = (x,y,w,h,bg,extra={}) => layout.push({type:'area', x,y,w,h, bg, ...extra});
+    const m = (no,x,y) => layout.push({type:'machine', x,y,w:S,h:S, no:String(no)});
+    // 背景區域
+    area(135, 0, 265, 447, IN);                                                     // 室內
+    area(255, 0, 90, 52, IN, {border:LINE, label:'樓', color:RED, fs:7});          // 樓梯（上方橫段）
+    area(345, 0, 55, 175, IN, {border:LINE, label:'梯', color:RED, fs:7});         // 樓梯（右側直段）
+    area(185, 112, 70, 34, 'transparent', {label:'室內', color:'#1f2937', fs:4.5}); // 文字
+    area(4, 430, 40, 110, 'transparent', {label:'室<br>外', color:'#0b1a3a', fs:7});
+    // 上方：14、13、電腦
+    m(14, 5, 4); m(13, 5+S+G, 4);
+    layout.push({type:'block', x:135, y:4, w:115, h:S, label:'電腦', bg:'#fde047', color:RED, fs:5});
+    // 樓梯旁：2
+    m(2, 345-S-G, 56);
+    // 中間：3（旁邊兌幣機）、4 6 / 5 7、8
+    const CX = 225;
+    m(3, CX+13, 180);
+    layout.push({type:'exchanger', x:CX+13+S+G, y:198, w:40, h:40, label:'兌', bg:'#a6a6a6', color:RED, fs:4.5});
+    m(4, CX, 245); m(6, CX+S+G, 245);
+    m(5, CX, 310); m(7, CX+S+G, 310);
+    m(8, CX+20, 375);
+    // 兩排相鄰：16–19、9–12
+    const AX = 70, BX = AX+S+G;
+    [16,17,18,19].forEach((n,k)=> m(n, AX, 180+k*(S+G)));
+    [9,10,11,12].forEach((n,k)=> m(n, BX, 185+k*(S+G)));
+    // 下方：20 23 / 21 22
+    m(20, AX, 520); m(23, BX, 520); m(21, AX, 585); m(22, BX, 585);
+    // 右側室外：24、25、26
+    [24,25,26].forEach((n,k)=> m(n, W-S, 455+k*(S+G)));
+    const H = Math.max(...layout.map(l=>l.y+l.h)) + 6;
+    return {layout, W, H, floorBg:OUT};
   }
-  const H = Math.max(...layout.map(l=>l.y+l.h)) + 6;   // 平面圖高度 = 最下方物件 + 邊距
 
   const machineSlots = layout.filter(l => l.type==='machine');
   const N = machineSlots.length;
-
-  const DEF_NO = {38:'28', 39:'2'};   // 新增機台的預設顯示編號（可重複，可在後台修改）
-  const DEF = i => ({no:DEF_NO[i] ?? String(i+1), status:'營運中', owner:'', rent:'', selfManaged:false, rentPaid:{}, revenueByMonth:{}, costByMonth:{}});
+  const DEF = i => ({no:machineSlots[i].no ?? String(i+1), status:'營運中', owner:'', rent:'', selfManaged:false, rentPaid:{}, revenueByMonth:{}, costByMonth:{}});
   const FIELDS = ['no','status','owner','rent'];
   // revenueByMonth / costByMonth 結構：{ "2026": { "1":"5600", ..., "12":"" } }（金額以字串存，空字串＝未填）
   const num = v => (v===''||v==null||isNaN(+v)) ? 0 : +v;
@@ -312,14 +391,17 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     return null;
   }
   function writeCache(){
-    localStorage.setItem(CLOUD ? CACHE_KEY : LOCAL_KEY, JSON.stringify({version:4, savedAt:new Date().toISOString(), machines, shopExpenses}));
+    localStorage.setItem(CLOUD ? VENUE.cacheKey : VENUE.localKey, JSON.stringify({version:4, savedAt:new Date().toISOString(), machines, shopExpenses}));
   }
 
-  let machines = (CLOUD ? readStore(CACHE_KEY) : readStore(LOCAL_KEY)) || defaults();
+  let machines = (CLOUD ? readStore(VENUE.cacheKey) : readStore(VENUE.localKey)) || defaults();
 
   const $ = id => document.getElementById(id);
   const floor = $('floor');
   floor.style.aspectRatio = `${W} / ${H}`;
+  floor.style.background = floorBg;
+  floor.classList.toggle('compact', VENUE.id==='venue2');
+  if(VENUE.id!=='main') floor.style.borderRadius = '4px';
   const pct = (v,t)=> (v/t*100)+'%';
   const esc = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const money = v => (v===''||v==null||isNaN(+v)) ? '—' : (+v).toLocaleString('zh-TW');
@@ -331,7 +413,16 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
       const el = document.createElement('div');
       el.className = 'item ' + l.type;
       Object.assign(el.style, {left:pct(l.x,W), top:pct(l.y,H), width:pct(l.w,W), height:pct(l.h,H)});
-      if(l.type==='exchanger'){ el.textContent='兌幣機'; el.title='兌幣機'; }
+      if(l.type==='area' || l.type==='block' || (l.type==='exchanger' && l.label)){
+        if(l.bg) el.style.background = l.bg;
+        if(l.border) el.style.border = `0.5cqw solid ${l.border}`;
+        if(l.type==='block') el.style.border = '0.5cqw solid #111';
+        if(l.color) el.style.color = l.color;
+        if(l.fs) el.style.fontSize = l.fs + 'cqw';
+        el.innerHTML = l.label || '';
+        el.title = (l.label||'').replace(/<br>/g,'');
+      }
+      else if(l.type==='exchanger'){ el.textContent='兌幣機'; el.title='兌幣機'; }
       else{
         const idx = mi++, m = machines[idx];
         if(l.big) el.classList.add('big');
@@ -556,11 +647,11 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
 
   // ---- 匯出 / 匯入 / 重設 ----
   $('btnExport').onclick = ()=>{
-    const data = JSON.stringify({version:4, exportedAt:new Date().toISOString(), machines, shopExpenses}, null, 2);
+    const data = JSON.stringify({version:4, venue:VENUE.id, venueName:venueName(VENUE), exportedAt:new Date().toISOString(), machines, shopExpenses}, null, 2);
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([data], {type:'application/json'}));
     const d = new Date(), p = n=>String(n).padStart(2,'0');
-    a.download = `娃娃機台備份_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}.json`;
+    a.download = `娃娃機台備份_${venueName(VENUE)}_${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}.json`;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
     toast('已匯出備份');
@@ -589,6 +680,51 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
   };
 
   let tt; function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('show'),2200); }
+
+  // ---- 場地選單 ----
+  let cloudMeta = null;
+  function renderVenueUI(){
+    const nm = venueName(VENUE);
+    $('venueTitle').textContent = '🧸 ' + nm;
+    document.title = nm + '｜娃娃機台平面圖';
+    $('venueList').innerHTML = VENUES.map(v=>`<div class="venue ${v.id===VENUE.id?'cur':''}" data-v="${v.id}">
+        <div style="flex:1;min-width:0"><div class="vn">${esc(venueName(v))}</div><div class="vc">${v.id===VENUE.id?'目前場地':'點選切換'}</div></div>
+        <button data-rename="${v.id}">改名</button></div>`).join('');
+  }
+  function openMenu(on){ $('drawer').classList.toggle('open', on); $('drawerBg').classList.toggle('open', on); }
+  $('btnMenu').onclick = ()=> openMenu(true);
+  $('btnMenuClose').onclick = ()=> openMenu(false);
+  $('drawerBg').onclick = ()=> openMenu(false);
+  $('venueList').addEventListener('click', async e=>{
+    const rn = e.target.closest('[data-rename]');
+    if(rn){
+      e.stopPropagation();
+      const v = VENUES.find(x=>x.id===rn.dataset.rename);
+      const name = prompt('場地名稱：', venueName(v));
+      if(name==null || !name.trim()) return;
+      venueNames[v.id] = name.trim().slice(0,30);
+      localStorage.setItem(NAMES_KEY, JSON.stringify(venueNames));
+      renderVenueUI();
+      if(cloud && cloudMeta){
+        try{ await cloudMeta.setDoc(cloudMeta.metaRef, {names:{[v.id]: venueNames[v.id]}}, {merge:true}); toast('場地名稱已儲存'); }
+        catch(err){ cloudError(err, '場地名稱儲存失敗'); }
+      } else toast('場地名稱已儲存（本機）');
+      return;
+    }
+    const card = e.target.closest('[data-v]');
+    if(!card) return;
+    if(card.dataset.v===VENUE.id){ openMenu(false); return; }
+    if(editing>=0) closeEditor();
+    localStorage.setItem(VENUE_KEY, card.dataset.v);   // 記住最後選擇的場地
+    location.reload();
+  });
+  function applyRemoteNames(names){
+    if(!names || typeof names!=='object') return;
+    for(const v of VENUES) if(typeof names[v.id]==='string' && names[v.id].trim()) venueNames[v.id] = names[v.id].trim();
+    localStorage.setItem(NAMES_KEY, JSON.stringify(venueNames));
+    renderVenueUI();
+  }
+  renderVenueUI();
 
   renderPeriod();
   render();
@@ -619,10 +755,12 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     const auth = A.getAuth(app);
     auth.languageCode = 'zh-TW';
     const db = F.getFirestore(app);
-    const ref = F.doc(db, ...FIRESTORE_DOC);
+    const ref = F.doc(db, 'floorplans', VENUE.doc);
+    const metaRef = F.doc(db, 'floorplans', '_meta');
+    cloudMeta = {setDoc:F.setDoc, metaRef};
     const provider = new A.GoogleAuthProvider();
     provider.setCustomParameters({prompt:'select_account'});
-    let unsub = null;
+    let unsub = null, unsubMeta = null;
 
     $('loginMsg').textContent = '';
     A.getRedirectResult(auth).catch(err=> showLogin('登入失敗：' + (err.code||err.message)));
@@ -641,8 +779,9 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     $('btnLoginRedirect').onclick = ()=> A.signInWithRedirect(auth, provider);
     const logout = async ()=>{
       if(unsub){ unsub(); unsub = null; }
+      if(unsubMeta){ unsubMeta(); unsubMeta = null; }
       cloud = null;
-      localStorage.removeItem(CACHE_KEY);       // 登出時清除這台裝置上的資料快取
+      VENUES.forEach(v=> localStorage.removeItem(v.cacheKey));   // 登出時清除這台裝置上所有場地的資料快取
       machines = defaults(); render();
       await A.signOut(auth);
     };
@@ -664,12 +803,14 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
       setSync('busy','同步中…');
       hideLogin();
       let first = true, migrated = false;
+      if(unsubMeta) unsubMeta();
+      unsubMeta = F.onSnapshot(metaRef, snap=>{ if(snap.exists()) applyRemoteNames(snap.data().names); }, err=> console.warn('meta', err.code));
       unsub = F.onSnapshot(ref, {includeMetadataChanges:true}, snap=>{
         if(!snap.exists()){
           if(first){
             first = false;
             // 第一次使用：把這台裝置上的舊資料（或預設值）上傳到雲端
-            const legacy = readStore(LOCAL_KEY);
+            const legacy = readStore(VENUE.localKey);
             if(legacy) machines = legacy;
             persistAll().then(()=> toast(legacy ? '已將本機資料上傳到雲端' : '已建立雲端資料'));
           }
@@ -693,7 +834,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
       }, err=>{
         if(err.code==='permission-denied'){
           cloud = null;
-          localStorage.removeItem(CACHE_KEY);
+          localStorage.removeItem(VENUE.cacheKey);
           machines = defaults(); render();
           showLogin(`「${user.email}」沒有讀取權限（請確認 Firestore 規則中的 Email）。`, true);
         } else cloudError(err, '同步失敗');
