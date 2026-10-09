@@ -116,7 +116,7 @@
   <div class="banner" id="banner">⚠️ 尚未設定雲端（firebaseConfig），目前為「僅本機」模式，資料只存在這台裝置。</div>
 </header>
 <main><div class="floor" id="floor"></div>
-  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10a・共 <span id="verN"></span> 台</div></main>
+  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10b・共 <span id="verN"></span> 台</div></main>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal" role="dialog" aria-modal="true">
@@ -198,16 +198,16 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
   // 右排：7 台 → 兌幣機 → 5 台 → 2 台大型機
   y = column(RX, 122, 7);
   layout.push({type:'exchanger', x:RX-8, y:y+3, w:S+16, h:56});
-  y = column(RX, y+67, 5);
+  const slot39 = {x:RX, y:y+67};             // 預留：兌幣機正下方給後來新增的 #39（預設編號 28）
+  y = column(RX, y+67+S+GAP, 5);
   y = column(W-12-BIG, y+3, 2, BIG, {big:true});
   // 上方靠牆：3 台並排（放在陣列最後 → 編號 36–38，不影響既有資料順序）
   { const n=3, x0=(W-(n*S+(n-1)*GAP))/2;
     for(let i=0;i<n;i++) layout.push({type:'machine', x:x0+i*(S+GAP), y:6, w:S, h:S}); }
   // 後來新增（放在陣列最後 → 內部位置 #39、#40，不影響既有資料）
   { const ms = layout.filter(l=>l.type==='machine');
-    const ex = layout.filter(l=>l.type==='exchanger');
-    const rEx = ex[1], leftLast = ms[12];   // 右排兌幣機、左排最下面一台
-    layout.push({type:'machine', x:rEx.x-S-GAP, y:rEx.y+(rEx.h-S)/2, w:S, h:S});   // #39：右排兌幣機左側（預設編號 28）
+    const leftLast = ms[12];   // 左排最下面一台
+    layout.push({type:'machine', x:slot39.x, y:slot39.y, w:S, h:S});   // #39：右排兌幣機正下方、29 號上方（預設編號 28）
     layout.push({type:'machine', x:leftLast.x, y:leftLast.y+S+GAP, w:S, h:S});    // #40：左排最下面一台的正下方（預設編號 2）
   }
   const H = Math.max(...layout.map(l=>l.y+l.h)) + 6;   // 平面圖高度 = 最下方物件 + 邊距
