@@ -39,8 +39,9 @@
   .machine .pay.self{background:#2563eb}
   .months.disabled,.months-tools.disabled{opacity:.35;pointer-events:none}
   .machine .pay.paid{background:var(--paid)} .machine .pay.unpaid{background:var(--unpaid)}
-  .machine.st-repair{background:#ffe9c7;border-color:#f59e0b;border-style:dashed}
-  .machine.st-idle{background:#d9dde3;border-color:#9aa4b2}
+  .machine.st-repair{background:#ede4ff;border-color:#8b5cf6;border-style:dashed}   /* 維修中：紫色虛線 */
+  .machine.st-vacant{background:#fdba74;border-color:#ea580c;color:#1f1300}         /* 待承租：橘色 */
+  .machine.st-vacant .owner, .machine.st-vacant .owner span{color:#5a2a00 !important}
   .machine.big .no{font-size:4.5cqw} .machine.big .owner{font-size:3.4cqw} .machine.big .pay{font-size:3cqw}
   .exchanger{background:var(--exch);color:#fff;font-weight:800;font-size:3.6cqw;border:0.5cqw solid #ff6b6b;cursor:default;letter-spacing:.1em}
   /* modal */
@@ -132,7 +133,7 @@
   <div class="banner" id="banner">⚠️ 尚未設定雲端（firebaseConfig），目前為「僅本機」模式，資料只存在這台裝置。</div>
 </header>
 <main><div class="floor" id="floor"></div>
-  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10e・共 <span id="verN"></span> 台</div></main>
+  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10f・共 <span id="verN"></span> 台</div></main>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal" role="dialog" aria-modal="true">
@@ -141,7 +142,7 @@
     <form id="form" class="grid">
       <label>編號<input name="no" required></label>
       <label>狀態<select name="status">
-        <option>營運中</option><option>維修中</option><option>閒置</option></select></label>
+        <option>營運中</option><option>維修中</option><option>待承租</option></select></label>
       <label class="full" style="flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:14px">
         <input type="checkbox" name="selfManaged" style="width:20px;height:20px;flex:none"> 未承租（自己管理）
         <span style="font-size:12px;color:var(--muted)">不收租金，營收／成本計入店的淨收入</span></label>
@@ -289,6 +290,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
       const out = {}; FIELDS.forEach(k=> out[k] = m[k]==null ? '' : String(m[k]));
       out.rentPaid = cleanRentPaid(m.rentPaid);
       out.selfManaged = m.selfManaged===true;
+      if(out.status==='閒置') out.status = '待承租';   // 舊名稱遷移（下次儲存時寫回雲端）
       out.revenueByMonth = cleanMoneyMap(m.revenueByMonth);
       out.costByMonth = cleanMoneyMap(m.costByMonth);
       // 舊資料遷移：單一「營收／成本」→ 記到目前月份（只在尚無每月資料時遷移一次）
@@ -334,7 +336,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
         const idx = mi++, m = machines[idx];
         if(l.big) el.classList.add('big');
         if(m.status==='維修中') el.classList.add('st-repair');
-        if(m.status==='閒置') el.classList.add('st-idle');
+        if(m.status==='待承租') el.classList.add('st-vacant');
         const paid = isPaid(m, viewY, viewM), self = m.selfManaged;
         el.innerHTML = `<div class="top"><span class="no">${esc(m.no)}</span>
           <span class="pay ${self?'self':paid?'paid':'unpaid'}">${self?'自管':paid?'已繳':'未繳'}</span></div>
