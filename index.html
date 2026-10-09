@@ -193,7 +193,8 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
   layout.push({type:'exchanger', x:LX-8, y:y+3, w:S+16, h:56});
   column(LX, y+67, 5);
   // 中間：4 組上下相疊的 2 台
-  [196, 420, 762, 930].forEach(y0 => column(CX, y0, 2));
+  // （上面兩組往右移、下面兩組往左移，讓出空間給 3 號與 29 號旁邊新增的機台）
+  [[196,176], [420,176], [762,150], [930,150]].forEach(([y0,x]) => column(x, y0, 2));
   // 右排：7 台 → 兌幣機 → 5 台 → 2 台大型機
   y = column(RX, 122, 7);
   layout.push({type:'exchanger', x:RX-8, y:y+3, w:S+16, h:56});
@@ -203,11 +204,18 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
   // 上方靠牆：3 台並排（放在陣列最後 → 編號 36–38，不影響既有資料順序）
   { const n=3, x0=(W-(n*S+(n-1)*GAP))/2;
     for(let i=0;i<n;i++) layout.push({type:'machine', x:x0+i*(S+GAP), y:6, w:S, h:S}); }
+  // 後來新增（放在陣列最後 → 內部位置 #39、#40，不影響既有資料）
+  { const ms = layout.filter(l=>l.type==='machine');
+    const m29 = ms[28], m3 = ms[2];
+    layout.push({type:'machine', x:m29.x-S-GAP, y:m29.y, w:S, h:S});   // #39：29 號左側（預設編號 28）
+    layout.push({type:'machine', x:m3.x+S+GAP,  y:m3.y,  w:S, h:S});   // #40：3 號右側（預設編號 2）
+  }
 
   const machineSlots = layout.filter(l => l.type==='machine');
   const N = machineSlots.length;
 
-  const DEF = i => ({no:String(i+1), status:'營運中', owner:'', rent:'', cost:'', revenue:'', rentPaid:{}});
+  const DEF_NO = {38:'28', 39:'2'};   // 新增機台的預設顯示編號（可重複，可在後台修改）
+  const DEF = i => ({no:DEF_NO[i] ?? String(i+1), status:'營運中', owner:'', rent:'', cost:'', revenue:'', rentPaid:{}});
   const FIELDS = ['no','status','owner','rent','cost','revenue'];
   const NOW = new Date(), CUR_Y = NOW.getFullYear(), CUR_M = NOW.getMonth()+1;
   let viewY = CUR_Y, viewM = CUR_M;
