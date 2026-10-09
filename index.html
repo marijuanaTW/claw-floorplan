@@ -54,11 +54,41 @@
   input,select{width:100%;min-width:0;font:inherit;font-size:16px;color:var(--text);background:#0f1318;border:1px solid var(--line);
     border-radius:8px;padding:8px}
   input:focus,select:focus{outline:none;border-color:var(--accent)}
+  .period{max-width:640px;margin:8px auto 0;display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted)}
+  .period select{width:auto;font-size:14px;padding:4px 8px}
+  .months-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .months-head select{width:auto;font-size:14px;padding:4px 8px}
+  .months{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;margin-top:6px}
+  .mchip{position:relative;display:block;text-align:center;font-size:13px;padding:8px 0;border-radius:8px;cursor:pointer;
+    border:1px solid #7f2a2a;background:#2a1414;color:#fca5a5;user-select:none}
+  .mchip input{position:absolute;opacity:0;pointer-events:none}
+  .mchip.on{border-color:#1f6f43;background:#12301f;color:#86efac}
+  .mchip.cur{box-shadow:0 0 0 2px var(--accent)}
+  .mchip small{display:block;font-size:10px;opacity:.85}
+  .months-tools{display:flex;gap:6px;margin-top:6px}
+  .months-tools button{font-size:12px;padding:4px 8px}
   .profit{margin-top:12px;font-size:14px;padding:8px 10px;border-radius:8px;background:#0f1318;border:1px solid var(--line)}
   .modal .foot{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
   .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#000;color:#fff;
     padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;z-index:30;pointer-events:none}
   .toast.show{opacity:.92}
+  /* 雲端 / 登入 */
+  .userbar{max-width:640px;margin:6px auto 0;display:none;align-items:center;gap:8px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+  .userbar.show{display:flex}
+  .userbar .email{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:55vw}
+  .sync{padding:2px 8px;border-radius:999px;border:1px solid var(--line);font-size:11px}
+  .sync.ok{color:#4ade80;border-color:#1f6f43} .sync.busy{color:#fbbf24;border-color:#7a5a12} .sync.err{color:#f87171;border-color:#7f2a2a}
+  .userbar button{margin-left:auto;font-size:12px;padding:4px 10px}
+  .banner{max-width:640px;margin:6px auto 0;font-size:12px;color:#fbbf24;display:none}
+  .banner.show{display:block}
+  .login-bg{position:fixed;inset:0;z-index:40;background:var(--bg);display:none;align-items:center;justify-content:center;padding:20px}
+  .login-bg.open{display:flex}
+  .login{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:24px 20px;width:100%;max-width:360px;text-align:center}
+  .login h2{margin:0 0 6px;font-size:20px}
+  .login p{color:var(--muted);font-size:13px;margin:0 0 18px;line-height:1.6}
+  .login .gbtn{width:100%;padding:12px;font-size:15px;background:#fff;color:#222;border:none;font-weight:600}
+  .login .msg{min-height:1.4em;margin-top:12px;font-size:13px;color:#f87171;line-height:1.5}
+  .login .alt{margin-top:10px;font-size:12px;background:none;border:none;color:var(--muted);text-decoration:underline}
 </style>
 </head>
 <body>
@@ -72,7 +102,18 @@
       <button id="btnReset" title="清除所有資料回到預設">重設</button>
     </div>
   </div>
+  <div class="period">顯示月份：
+    <select id="viewYear" aria-label="年份"></select>
+    <select id="viewMonth" aria-label="月份"></select>
+    <button id="btnThisMonth" style="font-size:12px;padding:4px 8px">本月</button>
+  </div>
   <div class="summary" id="summary"></div>
+  <div class="userbar" id="userbar">
+    <span>👤 <span class="email" id="userEmail"></span></span>
+    <span class="sync busy" id="syncState">連線中…</span>
+    <button id="btnLogout">登出</button>
+  </div>
+  <div class="banner" id="banner">⚠️ 尚未設定雲端（firebaseConfig），目前為「僅本機」模式，資料只存在這台裝置。</div>
 </header>
 <main><div class="floor" id="floor"></div></main>
 
@@ -86,8 +127,12 @@
         <option>營運中</option><option>維修中</option><option>閒置</option></select></label>
       <label class="full">台主名字<input name="owner" placeholder="例：王小明"></label>
       <label>台主租金 (元)<input name="rent" type="number" inputmode="decimal" min="0" step="any"></label>
-      <label>租金繳納狀態<select name="paid">
-        <option value="未繳">未繳</option><option value="已繳">已繳</option></select></label>
+      <div class="full">
+        <div class="months-head"><label style="flex-direction:row;align-items:center;gap:6px">每月租金繳納
+          <select id="edYear" aria-label="繳費年份"></select></label></div>
+        <div class="months" id="edMonths"></div>
+        <div class="months-tools"><button type="button" id="btnAllPaid">全部已繳</button><button type="button" id="btnNonePaid">全部未繳</button><span id="edPaidCount" style="font-size:12px;color:var(--muted);align-self:center"></span></div>
+      </div>
       <label>成本 (元)<input name="cost" type="number" inputmode="decimal" step="any"></label>
       <label>營收 (元)<input name="revenue" type="number" inputmode="decimal" step="any"></label>
     </form>
@@ -100,9 +145,41 @@
 </div>
 <div class="toast" id="toast"></div>
 
-<script>
-(function(){
-  const STORE_KEY = 'clawFloorplan.v1';  // 舊資料(35台)載入時會自動補上 36–38
+<div class="login-bg" id="loginBg">
+  <div class="login">
+    <h2>🧸 娃娃機台平面圖</h2>
+    <p>此頁面僅限店主使用。<br>請用授權的 Google 帳號登入。</p>
+    <button class="gbtn" id="btnLogin">使用 Google 帳號登入</button>
+    <button class="alt" id="btnLoginRedirect">登入視窗沒有出現？改用整頁登入</button>
+    <button class="alt" id="btnLoginOther" style="display:none">登出並改用其他帳號</button>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+</div>
+
+<script type="module">
+/* =====================================================================
+ * 🔧 Firebase 設定（請貼上 Firebase 主控台 → 專案設定 → 你的應用程式 → SDK 設定 裡的 firebaseConfig）
+ *    保留 'PASTE_...' 的話，頁面會以「僅本機」模式執行（資料只存在這台裝置）。
+ *    注意：apiKey 不是密碼，可以公開；真正的保護來自 firestore.rules。
+ * ===================================================================== */
+const firebaseConfig = {
+  apiKey:            "AIzaSyBbiycotwBaRLFhnknAbrhSPIg3VmA4SN4",
+  authDomain:        "claw-floorplan-9bb73.firebaseapp.com",
+  projectId:         "claw-floorplan-9bb73",
+  storageBucket:     "claw-floorplan-9bb73.firebasestorage.app",
+  messagingSenderId: "1013569430626",
+  appId:             "1:1013569430626:web:71aa004fdbc08bb3a11d3b",
+};
+// 允許的帳號（只影響畫面提示；真正的權限由 firestore.rules 決定，兩邊要一致）
+const OWNER_EMAILS = ["qew59601211@gmail.com"];
+const FIRESTORE_DOC = ["floorplans", "main"];   // 所有機台資料存在這一份文件
+const FB_VER = "13.0.0";
+/* ===================================================================== */
+
+const CLOUD = !Object.values(firebaseConfig).some(v => String(v).includes("PASTE_"));
+const LOCAL_KEY = 'clawFloorplan.v1';            // 僅本機模式 / 舊資料
+const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取（登出時清除）
+
   // 座標系：寬 400 × 高 H（依照手繪佈局圖排列；所有機台皆為正方形）
   const W = 400, S = 74, BIG = 104, GAP = 5;   // S=一般機台邊長, BIG=右下大型機邊長
   const layout = [];   // {type:'machine'|'exchanger', x,y,w,h, big}
@@ -130,24 +207,48 @@
   const machineSlots = layout.filter(l => l.type==='machine');
   const N = machineSlots.length;
 
-  function defaults(){
-    return machineSlots.map((_,i)=>({no:String(i+1), status:'營運中', owner:'', rent:'', paid:'未繳', cost:'', revenue:''}));
+  const DEF = i => ({no:String(i+1), status:'營運中', owner:'', rent:'', cost:'', revenue:'', rentPaid:{}});
+  const FIELDS = ['no','status','owner','rent','cost','revenue'];
+  const NOW = new Date(), CUR_Y = NOW.getFullYear(), CUR_M = NOW.getMonth()+1;
+  let viewY = CUR_Y, viewM = CUR_M;
+  // rentPaid 結構：{ "2026": { "1":true, "2":false, ... "12":false } }
+  const isPaid = (m,y,mo) => !!(m.rentPaid && m.rentPaid[String(y)] && m.rentPaid[String(y)][String(mo)]);
+  function cleanRentPaid(rp){
+    const out = {};
+    if(rp && typeof rp==='object') for(const [y,months] of Object.entries(rp)){
+      if(!/^\d{4}$/.test(y) || !months || typeof months!=='object') continue;
+      out[y] = {}; for(let k=1;k<=12;k++) out[y][String(k)] = !!months[String(k)];
+    }
+    return out;
   }
-  function load(){
-    try{
-      const d = JSON.parse(localStorage.getItem(STORE_KEY));
-      if(d && Array.isArray(d.machines)) return normalize(d.machines);
-    }catch(e){}
-    return defaults();
+  function defaults(){ return machineSlots.map((_,i)=>DEF(i)); }
+  // 接受陣列或 {"0":{...},"1":{...}} 物件，補齊缺少的機台
+  function normalize(src){
+    return machineSlots.map((_,i)=>{
+      const m = Object.assign(DEF(i), (src && src[i]) || (src && src[String(i)]) || {});
+      const out = {}; FIELDS.forEach(k=> out[k] = m[k]==null ? '' : String(m[k]));
+      out.rentPaid = cleanRentPaid(m.rentPaid);
+      // 舊資料遷移：單一「已繳」→ 記為目前月份已繳
+      if(m.paid==='已繳' && Object.keys(out.rentPaid).length===0){   // 只在尚無每月資料時遷移一次
+        const y = String(CUR_Y); out.rentPaid[y] = out.rentPaid[y] || Object.fromEntries([...Array(12)].map((_,k)=>[String(k+1),false]));
+        out.rentPaid[y][String(CUR_M)] = true;
+      }
+      return out;
+    });
   }
-  function normalize(arr){
-    const def = defaults();
-    return def.map((d,i)=>Object.assign(d, arr[i]||{}));
+  const toMap = arr => Object.fromEntries(arr.map((m,i)=>[String(i), m]));
+  function readStore(key){
+    try{ const d = JSON.parse(localStorage.getItem(key)); if(d && d.machines) return normalize(d.machines); }catch(e){}
+    return null;
   }
-  let machines = load();
-  function save(){ localStorage.setItem(STORE_KEY, JSON.stringify({version:1, savedAt:new Date().toISOString(), machines})); }
+  function writeCache(){
+    localStorage.setItem(CLOUD ? CACHE_KEY : LOCAL_KEY, JSON.stringify({version:3, savedAt:new Date().toISOString(), machines}));
+  }
 
-  const floor = document.getElementById('floor');
+  let machines = (CLOUD ? readStore(CACHE_KEY) : readStore(LOCAL_KEY)) || defaults();
+
+  const $ = id => document.getElementById(id);
+  const floor = $('floor');
   floor.style.aspectRatio = `${W} / ${H}`;
   const pct = (v,t)=> (v/t*100)+'%';
   const esc = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -166,11 +267,11 @@
         if(l.big) el.classList.add('big');
         if(m.status==='維修中') el.classList.add('st-repair');
         if(m.status==='閒置') el.classList.add('st-idle');
-        const paid = m.paid==='已繳';
+        const paid = isPaid(m, viewY, viewM);
         el.innerHTML = `<div class="top"><span class="no">${esc(m.no)}</span>
           <span class="pay ${paid?'paid':'unpaid'}">${paid?'已繳':'未繳'}</span></div>
           <div class="owner">${m.owner ? esc(m.owner) : '<span style="color:#999">未設定</span>'}</div>`;
-        el.title = `${m.no} 號機｜${m.status}`;
+        el.title = `${m.no} 號機｜${m.status}｜${viewY}年${viewM}月 ${paid?'已繳':'未繳'}`;
         el.tabIndex = 0;
         el.addEventListener('click', ()=>openEditor(idx));
         el.addEventListener('keydown', e=>{ if(e.key==='Enter') openEditor(idx); });
@@ -180,56 +281,128 @@
     renderSummary();
   }
   function renderSummary(){
-    const paid = machines.filter(m=>m.paid==='已繳').length;
+    const paid = machines.filter(m=>isPaid(m,viewY,viewM)).length;
     const sum = k => machines.reduce((a,m)=>a+(+m[k]||0),0);
-    const rentDue = machines.filter(m=>m.paid!=='已繳').reduce((a,m)=>a+(+m.rent||0),0);
-    document.getElementById('summary').innerHTML =
-      `<span>機台 <b>${N}</b> 台</span>
+    // 本月待收：選定月份未繳的租金合計
+    const due = machines.filter(m=>!isPaid(m,viewY,viewM)).reduce((a,m)=>a+(+m.rent||0),0);
+    // 今年累計未繳：選定年份 1 月～選定月份，每台 租金 × 未繳月數
+    const arrears = machines.reduce((a,m)=>{ let n=0; for(let k=1;k<=viewM;k++) if(!isPaid(m,viewY,k)) n++; return a + (+m.rent||0)*n; },0);
+    $('summary').innerHTML =
+      `<span><b>${viewY}年${viewM}月</b></span>
+       <span>機台 <b>${N}</b> 台</span>
        <span><i class="dot" style="background:var(--paid)"></i>已繳 <b>${paid}</b></span>
-       <span><i class="dot" style="background:var(--unpaid)"></i>未繳 <b>${N-paid}</b>（待收 ${money(rentDue)} 元）</span>
+       <span><i class="dot" style="background:var(--unpaid)"></i>未繳 <b>${N-paid}</b>（本月待收 <b>${money(due)}</b> 元）</span>
+       <span>${viewY}年 1–${viewM}月累計未繳 <b>${money(arrears)}</b> 元</span>
        <span>總營收 <b>${money(sum('revenue'))}</b></span>
        <span>總成本 <b>${money(sum('cost'))}</b></span>`;
   }
 
+  // ---- 年份 / 月份選擇 ----
+  function yearOptions(extra=[]){
+    const ys = new Set([CUR_Y-1, CUR_Y, CUR_Y+1, viewY, ...extra]);
+    machines.forEach(m=> Object.keys(m.rentPaid||{}).forEach(y=> ys.add(+y)));
+    return [...ys].filter(Boolean).sort((a,b)=>a-b);
+  }
+  function fillSelect(sel, values, cur, label){
+    sel.innerHTML = values.map(v=>`<option value="${v}" ${v==cur?'selected':''}>${label(v)}</option>`).join('');
+  }
+  function renderPeriod(){
+    fillSelect($('viewYear'), yearOptions(), viewY, y=>`${y} 年`);
+    fillSelect($('viewMonth'), [...Array(12)].map((_,k)=>k+1), viewM, m=>`${m} 月`);
+  }
+  $('viewYear').onchange = e=>{ viewY = +e.target.value; render(); };
+  $('viewMonth').onchange = e=>{ viewM = +e.target.value; render(); };
+  $('btnThisMonth').onclick = ()=>{ viewY = CUR_Y; viewM = CUR_M; renderPeriod(); render(); };
+
+  // ---- 儲存層：僅本機 or Firestore ----
+  let cloud = null;   // {db, ref, setDoc, serverTimestamp, user}
+  function setSync(state, text){ const el=$('syncState'); el.className='sync '+state; el.textContent=text; }
+  async function persistOne(idx){
+    writeCache();
+    if(!cloud) return;
+    setSync('busy','儲存中…');
+    try{
+      await cloud.setDoc(cloud.ref, {machines:{[String(idx)]: {...machines[idx], paid: cloud.deleteField()}}, updatedAt:cloud.serverTimestamp(), updatedBy:cloud.user.email}, {merge:true});
+    }catch(err){ cloudError(err, '儲存失敗'); }
+  }
+  async function persistAll(){
+    writeCache();
+    if(!cloud) return;
+    setSync('busy','儲存中…');
+    try{
+      await cloud.setDoc(cloud.ref, {machines: toMap(machines), updatedAt:cloud.serverTimestamp(), updatedBy:cloud.user.email});
+    }catch(err){ cloudError(err, '儲存失敗'); }
+  }
+  function cloudError(err, prefix){
+    console.error(err);
+    setSync('err','同步錯誤');
+    const denied = err && (err.code==='permission-denied' || err.code==='firestore/permission-denied');
+    toast(denied ? `${prefix}：此帳號沒有權限` : `${prefix}：${err.code||err.message}`);
+  }
+
   // ---- 編輯視窗 ----
-  const bg = document.getElementById('modalBg'), form = document.getElementById('form');
+  const bg = $('modalBg'), form = $('form');
   let editing = -1;
   function openEditor(idx){
     editing = idx;
     const m = machines[idx];
-    for(const k of Object.keys(m)) if(form.elements[k]) form.elements[k].value = m[k];
-    document.getElementById('modalSub').textContent = `位置 #${idx+1}（共 ${N} 台）`;
+    for(const k of FIELDS) if(form.elements[k]) form.elements[k].value = m[k];
+    edPaid = JSON.parse(JSON.stringify(m.rentPaid||{}));
+    edYear = viewY;
+    renderMonths();
+    $('modalSub').textContent = `位置 #${idx+1}（共 ${N} 台）`;
     updateProfit();
     bg.classList.add('open');
-    setTimeout(()=>form.elements.owner.focus(), 50);
+    if(matchMedia('(pointer:fine)').matches) setTimeout(()=>form.elements.owner.focus(), 50);
   }
+  let edPaid = {}, edYear = CUR_Y;
+  function renderMonths(){
+    fillSelect($('edYear'), yearOptions(Object.keys(edPaid).map(Number)), edYear, y=>`${y} 年`);
+    const yr = edPaid[String(edYear)] || {};
+    let n = 0;
+    $('edMonths').innerHTML = [...Array(12)].map((_,k)=>{
+      const mo = k+1, on = !!yr[String(mo)]; if(on) n++;
+      const cur = edYear===viewY && mo===viewM;
+      return `<label class="mchip ${on?'on':''} ${cur?'cur':''}"><input type="checkbox" data-m="${mo}" ${on?'checked':''}>${mo}月<small>${on?'已繳':'未繳'}</small></label>`;
+    }).join('');
+    $('edPaidCount').textContent = `${edYear} 年已繳 ${n}/12 個月`;
+  }
+  function setMonth(mo, on){
+    const y = String(edYear);
+    edPaid[y] = edPaid[y] || Object.fromEntries([...Array(12)].map((_,k)=>[String(k+1),false]));
+    edPaid[y][String(mo)] = on;
+  }
+  $('edMonths').addEventListener('change', e=>{ const cb = e.target.closest('input[data-m]'); if(!cb) return; setMonth(+cb.dataset.m, cb.checked); renderMonths(); });
+  $('edYear').onchange = e=>{ edYear = +e.target.value; renderMonths(); };
+  $('btnAllPaid').onclick = ()=>{ for(let k=1;k<=12;k++) setMonth(k,true); renderMonths(); };
+  $('btnNonePaid').onclick = ()=>{ for(let k=1;k<=12;k++) setMonth(k,false); renderMonths(); };
   function closeEditor(){ bg.classList.remove('open'); editing = -1; }
   function updateProfit(){
-    const r = +form.elements.revenue.value||0, c = +form.elements.cost.value||0, rent = +form.elements.rent.value||0;
+    const r = +form.elements.revenue.value||0, c = +form.elements.cost.value||0;
     const p = r - c;
-    document.getElementById('profit').innerHTML =
-      `淨利（營收 − 成本）：<b style="color:${p>=0?'#4ade80':'#f87171'}">${p.toLocaleString('zh-TW')}</b> 元`;
+    $('profit').innerHTML = `淨利（營收 − 成本）：<b style="color:${p>=0?'#4ade80':'#f87171'}">${p.toLocaleString('zh-TW')}</b> 元`;
   }
   form.addEventListener('input', updateProfit);
-  document.getElementById('btnCancel').onclick = closeEditor;
-  document.getElementById('btnSave').onclick = ()=>{
+  $('btnCancel').onclick = closeEditor;
+  $('btnSave').onclick = ()=>{
     if(editing<0) return;
     const no = form.elements.no.value.trim();
     if(!no){ form.elements.no.focus(); toast('請輸入編號'); return; }
     const dup = machines.findIndex((m,i)=>i!==editing && m.no===no);
     if(dup>=0 && !confirm(`編號「${no}」已被其他機台使用，仍要儲存嗎？`)) return;
-    const m = machines[editing];
-    ['status','owner','rent','paid','cost','revenue'].forEach(k=> m[k] = form.elements[k].value.trim());
+    const idx = editing, m = machines[idx];
+    ['status','owner','rent','cost','revenue'].forEach(k=> m[k] = form.elements[k].value.trim());
+    m.rentPaid = cleanRentPaid(edPaid);   // 每個有資料的年份都寫入完整 12 個月（true/false），Firestore merge 才能正確取消勾選
     m.no = no;
-    save(); render(); closeEditor(); toast('已儲存');
+    render(); closeEditor(); persistOne(idx); toast(cloud ? '已儲存（同步中）' : '已儲存');
   };
   bg.addEventListener('click', e=>{ if(e.target===bg) closeEditor(); });
   document.addEventListener('keydown', e=>{ if(e.key==='Escape' && bg.classList.contains('open')) closeEditor(); });
-  form.addEventListener('submit', e=>{ e.preventDefault(); document.getElementById('btnSave').click(); });
+  form.addEventListener('submit', e=>{ e.preventDefault(); $('btnSave').click(); });
 
   // ---- 匯出 / 匯入 / 重設 ----
-  document.getElementById('btnExport').onclick = ()=>{
-    const data = JSON.stringify({version:1, exportedAt:new Date().toISOString(), machines}, null, 2);
+  $('btnExport').onclick = ()=>{
+    const data = JSON.stringify({version:3, exportedAt:new Date().toISOString(), machines}, null, 2);
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([data], {type:'application/json'}));
     const d = new Date(), p = n=>String(n).padStart(2,'0');
@@ -238,30 +411,133 @@
     setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
     toast('已匯出備份');
   };
-  document.getElementById('fileImport').onchange = e=>{
+  $('fileImport').onchange = e=>{
     const f = e.target.files[0]; if(!f) return;
     const rd = new FileReader();
     rd.onload = ()=>{
       try{
         const d = JSON.parse(rd.result);
-        const arr = Array.isArray(d) ? d : d.machines;
-        if(!Array.isArray(arr)) throw new Error('格式錯誤');
-        if(!confirm(`將以檔案內 ${arr.length} 筆資料覆蓋目前資料，確定嗎？`)) return;
-        machines = normalize(arr); save(); render(); toast('匯入完成');
+        const src = Array.isArray(d) ? d : d.machines;
+        if(!src || typeof src!=='object') throw new Error('格式錯誤');
+        const n = Array.isArray(src) ? src.length : Object.keys(src).length;
+        if(!confirm(`將以檔案內 ${n} 筆資料覆蓋目前${cloud?'雲端':''}資料，確定嗎？`)) return;
+        machines = normalize(src); render(); persistAll(); toast('匯入完成');
       }catch(err){ alert('匯入失敗：' + err.message); }
       e.target.value = '';
     };
     rd.readAsText(f);
   };
-  document.getElementById('btnReset').onclick = ()=>{
-    if(!confirm('確定要清除所有資料並回到預設嗎？建議先匯出備份。')) return;
-    machines = defaults(); save(); render(); toast('已重設');
+  $('btnReset').onclick = ()=>{
+    if(!confirm(`確定要清除所有${cloud?'雲端':''}資料並回到預設嗎？建議先匯出備份。`)) return;
+    machines = defaults(); render(); persistAll(); toast('已重設');
   };
 
-  let tt; function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('show'),1600); }
+  let tt; function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('show'),2200); }
 
+  renderPeriod();
   render();
-})();
+
+  // ---- Firebase：Google 登入 + Firestore 即時同步 ----
+  if(!CLOUD){
+    $('banner').classList.add('show');
+  } else {
+    initCloud().catch(err=>{ console.error(err); showLogin('無法載入 Firebase：' + (err.message||err)); });
+  }
+
+  function showLogin(msg='', wrongAccount=false){
+    $('loginBg').classList.add('open');
+    $('loginMsg').textContent = msg;
+    $('btnLogin').style.display = wrongAccount ? 'none' : '';
+    $('btnLoginRedirect').style.display = wrongAccount ? 'none' : '';
+    $('btnLoginOther').style.display = wrongAccount ? '' : 'none';
+  }
+  function hideLogin(){ $('loginBg').classList.remove('open'); }
+
+  async function initCloud(){
+    showLogin('載入中…');
+    const base = `https://www.gstatic.com/firebasejs/${FB_VER}`;
+    const [{initializeApp}, A, F] = await Promise.all([
+      import(`${base}/firebase-app.js`), import(`${base}/firebase-auth.js`), import(`${base}/firebase-firestore.js`)]);
+    const app = initializeApp(firebaseConfig);
+    const auth = A.getAuth(app);
+    auth.languageCode = 'zh-TW';
+    const db = F.getFirestore(app);
+    const ref = F.doc(db, ...FIRESTORE_DOC);
+    const provider = new A.GoogleAuthProvider();
+    provider.setCustomParameters({prompt:'select_account'});
+    let unsub = null;
+
+    $('loginMsg').textContent = '';
+    A.getRedirectResult(auth).catch(err=> showLogin('登入失敗：' + (err.code||err.message)));
+
+    $('btnLogin').onclick = async ()=>{
+      $('loginMsg').textContent = '';
+      try{ await A.signInWithPopup(auth, provider); }
+      catch(err){
+        if(err.code==='auth/popup-blocked' || err.code==='auth/operation-not-supported-in-this-environment'){
+          await A.signInWithRedirect(auth, provider);
+        } else if(err.code!=='auth/popup-closed-by-user' && err.code!=='auth/cancelled-popup-request'){
+          showLogin('登入失敗：' + (err.code||err.message));
+        }
+      }
+    };
+    $('btnLoginRedirect').onclick = ()=> A.signInWithRedirect(auth, provider);
+    const logout = async ()=>{
+      if(unsub){ unsub(); unsub = null; }
+      cloud = null;
+      localStorage.removeItem(CACHE_KEY);       // 登出時清除這台裝置上的資料快取
+      machines = defaults(); render();
+      await A.signOut(auth);
+    };
+    $('btnLogout').onclick = ()=>{ if(confirm('確定要登出嗎？')) logout(); };
+    $('btnLoginOther').onclick = logout;
+
+    A.onAuthStateChanged(auth, user=>{
+      if(unsub){ unsub(); unsub = null; }
+      if(!user){ cloud = null; $('userbar').classList.remove('show'); showLogin(); return; }
+      const email = (user.email||'').toLowerCase();
+      if(!OWNER_EMAILS.map(e=>e.toLowerCase()).includes(email)){
+        cloud = null;
+        showLogin(`「${user.email}」沒有使用權限，請改用店主帳號登入。`, true);
+        return;
+      }
+      cloud = {db, ref, setDoc:F.setDoc, serverTimestamp:F.serverTimestamp, deleteField:F.deleteField, user};
+      $('userEmail').textContent = user.email;
+      $('userbar').classList.add('show');
+      setSync('busy','同步中…');
+      hideLogin();
+      let first = true;
+      unsub = F.onSnapshot(ref, {includeMetadataChanges:true}, snap=>{
+        if(!snap.exists()){
+          if(first){
+            first = false;
+            // 第一次使用：把這台裝置上的舊資料（或預設值）上傳到雲端
+            const legacy = readStore(LOCAL_KEY);
+            if(legacy) machines = legacy;
+            persistAll().then(()=> toast(legacy ? '已將本機資料上傳到雲端' : '已建立雲端資料'));
+          }
+          return;
+        }
+        first = false;
+        const d = snap.data();
+        if(editing<0 || !snap.metadata.hasPendingWrites){
+          machines = normalize(d.machines || {});
+          writeCache();
+          if(editing<0) render(); else renderSummary();
+        }
+        if(snap.metadata.hasPendingWrites) setSync('busy','儲存中…');
+        else if(snap.metadata.fromCache) setSync('busy','離線（使用快取）');
+        else setSync('ok','✓ 已同步');
+      }, err=>{
+        if(err.code==='permission-denied'){
+          cloud = null;
+          localStorage.removeItem(CACHE_KEY);
+          machines = defaults(); render();
+          showLogin(`「${user.email}」沒有讀取權限（請確認 Firestore 規則中的 Email）。`, true);
+        } else cloudError(err, '同步失敗');
+      });
+    });
+  }
 </script>
 </body>
 </html>
