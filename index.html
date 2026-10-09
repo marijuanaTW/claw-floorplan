@@ -36,6 +36,8 @@
   .machine .no{font-weight:800;font-size:3.6cqw}
   .machine .owner{font-size:2.8cqw;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .machine .pay{font-size:2.5cqw;font-weight:700;color:#fff;border-radius:1cqw;padding:0.2cqw 1.2cqw}
+  .machine .pay.self{background:#2563eb}
+  .months.disabled,.months-tools.disabled{opacity:.35;pointer-events:none}
   .machine .pay.paid{background:var(--paid)} .machine .pay.unpaid{background:var(--unpaid)}
   .machine.st-repair{background:#ffe9c7;border-color:#f59e0b;border-style:dashed}
   .machine.st-idle{background:#d9dde3;border-color:#9aa4b2}
@@ -130,7 +132,7 @@
   <div class="banner" id="banner">⚠️ 尚未設定雲端（firebaseConfig），目前為「僅本機」模式，資料只存在這台裝置。</div>
 </header>
 <main><div class="floor" id="floor"></div>
-  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10d・共 <span id="verN"></span> 台</div></main>
+  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10e・共 <span id="verN"></span> 台</div></main>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal" role="dialog" aria-modal="true">
@@ -140,6 +142,9 @@
       <label>編號<input name="no" required></label>
       <label>狀態<select name="status">
         <option>營運中</option><option>維修中</option><option>閒置</option></select></label>
+      <label class="full" style="flex-direction:row;align-items:center;gap:8px;color:var(--text);font-size:14px">
+        <input type="checkbox" name="selfManaged" style="width:20px;height:20px;flex:none"> 未承租（自己管理）
+        <span style="font-size:12px;color:var(--muted)">不收租金，營收／成本計入店的淨收入</span></label>
       <label class="full">台主名字<input name="owner" placeholder="例：王小明"></label>
       <label>台主租金 (元)<input name="rent" type="number" inputmode="decimal" min="0" step="any"></label>
       <div class="full">
@@ -237,7 +242,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
   const N = machineSlots.length;
 
   const DEF_NO = {38:'28', 39:'2'};   // 新增機台的預設顯示編號（可重複，可在後台修改）
-  const DEF = i => ({no:DEF_NO[i] ?? String(i+1), status:'營運中', owner:'', rent:'', rentPaid:{}, revenueByMonth:{}, costByMonth:{}});
+  const DEF = i => ({no:DEF_NO[i] ?? String(i+1), status:'營運中', owner:'', rent:'', selfManaged:false, rentPaid:{}, revenueByMonth:{}, costByMonth:{}});
   const FIELDS = ['no','status','owner','rent'];
   // revenueByMonth / costByMonth 結構：{ "2026": { "1":"5600", ..., "12":"" } }（金額以字串存，空字串＝未填）
   const num = v => (v===''||v==null||isNaN(+v)) ? 0 : +v;
@@ -283,6 +288,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
       const m = Object.assign(DEF(i), (src && src[i]) || (src && src[String(i)]) || {});
       const out = {}; FIELDS.forEach(k=> out[k] = m[k]==null ? '' : String(m[k]));
       out.rentPaid = cleanRentPaid(m.rentPaid);
+      out.selfManaged = m.selfManaged===true;
       out.revenueByMonth = cleanMoneyMap(m.revenueByMonth);
       out.costByMonth = cleanMoneyMap(m.costByMonth);
       // 舊資料遷移：單一「營收／成本」→ 記到目前月份（只在尚無每月資料時遷移一次）
@@ -329,11 +335,11 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
         if(l.big) el.classList.add('big');
         if(m.status==='維修中') el.classList.add('st-repair');
         if(m.status==='閒置') el.classList.add('st-idle');
-        const paid = isPaid(m, viewY, viewM);
+        const paid = isPaid(m, viewY, viewM), self = m.selfManaged;
         el.innerHTML = `<div class="top"><span class="no">${esc(m.no)}</span>
-          <span class="pay ${paid?'paid':'unpaid'}">${paid?'已繳':'未繳'}</span></div>
+          <span class="pay ${self?'self':paid?'paid':'unpaid'}">${self?'自管':paid?'已繳':'未繳'}</span></div>
           <div class="owner">${m.owner ? esc(m.owner) : '<span style="color:#999">未設定</span>'}</div>`;
-        el.title = `${m.no} 號機｜${m.status}｜${viewY}年${viewM}月 ${paid?'已繳':'未繳'}`;
+        el.title = `${m.no} 號機｜${m.status}｜${self?'自己管理':`${viewY}年${viewM}月 ${paid?'已繳':'未繳'}`}`;
         el.tabIndex = 0;
         el.addEventListener('click', ()=>openEditor(idx));
         el.addEventListener('keydown', e=>{ if(e.key==='Enter') openEditor(idx); });
@@ -343,23 +349,27 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     renderSummary();
   }
   function monthTotals(y, mo){
-    const rentIn = machines.filter(m=>isPaid(m,y,mo)).reduce((a,m)=>a+num(m.rent),0);   // 已收台主租金
-    const rev  = machines.reduce((a,m)=>a+num(getMon(m.revenueByMonth,y,mo)),0);
-    const cost = machines.reduce((a,m)=>a+num(getMon(m.costByMonth,y,mo)),0);
+    const rented = machines.filter(m=>!m.selfManaged), self = machines.filter(m=>m.selfManaged);
+    const rentIn = rented.filter(m=>isPaid(m,y,mo)).reduce((a,m)=>a+num(m.rent),0);   // 已收台主租金
+    const sumMon = (list,key) => list.reduce((a,m)=>a+num(getMon(m[key],y,mo)),0);
+    const selfRev = sumMon(self,'revenueByMonth'), selfCost = sumMon(self,'costByMonth');      // 自管：計入
+    const rev = sumMon(rented,'revenueByMonth'), cost = sumMon(rented,'costByMonth');          // 台主：不計入
     const ex = (shopExpenses[String(y)]||{})[String(mo)] || {};
     const shopRent = num(ex.rent), elec = num(ex.electricity);
-    return {rentIn, rev, cost, shopRent, elec, net: rentIn - shopRent - elec};   // 機台營收屬於台主，不計入店的淨收入
+    return {rentIn, selfRev, selfCost, rev, cost, shopRent, elec, net: rentIn + selfRev - selfCost - shopRent - elec};   // 出租機台的營收屬於台主，不計入
   }
   function renderSummary(){
-    const paid = machines.filter(m=>isPaid(m,viewY,viewM)).length;
-    const due = machines.filter(m=>!isPaid(m,viewY,viewM)).reduce((a,m)=>a+num(m.rent),0);
-    const arrears = machines.reduce((a,m)=>{ let n=0; for(let k=1;k<=viewM;k++) if(!isPaid(m,viewY,k)) n++; return a + num(m.rent)*n; },0);
+    const rented = machines.filter(m=>!m.selfManaged), nSelf = N - rented.length;
+    const paid = rented.filter(m=>isPaid(m,viewY,viewM)).length;
+    const due = rented.filter(m=>!isPaid(m,viewY,viewM)).reduce((a,m)=>a+num(m.rent),0);
+    const arrears = rented.reduce((a,m)=>{ let n=0; for(let k=1;k<=viewM;k++) if(!isPaid(m,viewY,k)) n++; return a + num(m.rent)*n; },0);
     const t = monthTotals(viewY, viewM);
     $('summary').innerHTML =
       `<span><b>${viewY}年${viewM}月</b></span>
        <span>機台 <b>${N}</b> 台</span>
        <span><i class="dot" style="background:var(--paid)"></i>已繳 <b>${paid}</b></span>
-       <span><i class="dot" style="background:var(--unpaid)"></i>未繳 <b>${N-paid}</b>（本月待收 <b>${money(due)}</b> 元）</span>
+       <span><i class="dot" style="background:#2563eb"></i>自管 <b>${nSelf}</b></span>
+       <span><i class="dot" style="background:var(--unpaid)"></i>未繳 <b>${rented.length-paid}</b>（本月待收 <b>${money(due)}</b> 元）</span>
        <span>${viewY}年 1–${viewM}月累計未繳 <b>${money(arrears)}</b> 元</span>`;
     $('finTitle').textContent = `${viewY}年${viewM}月`;
     const ex = (shopExpenses[String(viewY)]||{})[String(viewM)] || {};
@@ -369,7 +379,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     const f = v => v.toLocaleString('zh-TW');
     $('netIncome').innerHTML =
       `每月總淨收入：<b class="big ${t.net>=0?'pos':'neg'}">${f(t.net)}</b> 元<br>
-       ＝ 已收租金 ${f(t.rentIn)} − 房租 ${f(t.shopRent)} − 電費 ${f(t.elec)}<br>
+       ＝ 已收租金 ${f(t.rentIn)} ＋ 自管機台營收 ${f(t.selfRev)} − 自管機台成本 ${f(t.selfCost)} − 房租 ${f(t.shopRent)} − 電費 ${f(t.elec)}<br>
        <span style="font-size:12px;color:#6b7280">機台營收/成本（台主，不計入）：營收 ${f(t.rev)}・成本 ${f(t.cost)}</span>`;
   }
   // 店面支出輸入：停止輸入 0.6 秒後自動儲存（只寫入該年該月）
@@ -464,7 +474,8 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     edRev = JSON.parse(JSON.stringify(m.revenueByMonth||{}));
     edCost = JSON.parse(JSON.stringify(m.costByMonth||{}));
     edYear = viewY; edMonth = viewM;
-    renderMonths(); loadMoneyInputs();
+    form.elements.selfManaged.checked = !!m.selfManaged;
+    renderMonths(); loadMoneyInputs(); applySelfManaged();
     $('modalSub').textContent = `位置 #${idx+1}（共 ${N} 台）`;
     updateProfit();
     bg.classList.add('open');
@@ -505,6 +516,14 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
   $('edYear').onchange = e=>{ flushMoneyInputs(); edYear = +e.target.value; renderMonths(); loadMoneyInputs(); };
   $('btnAllPaid').onclick = ()=>{ for(let k=1;k<=12;k++) setMonth(k,true); renderMonths(); };
   $('btnNonePaid').onclick = ()=>{ for(let k=1;k<=12;k++) setMonth(k,false); renderMonths(); };
+  function applySelfManaged(){
+    const on = form.elements.selfManaged.checked;
+    form.elements.rent.disabled = on;
+    $('edMonths').classList.toggle('disabled', on);
+    document.querySelector('.months-tools').classList.toggle('disabled', on);
+    $('edYear').disabled = false;   // 年份仍可切換（營收／成本也用這個年份）
+  }
+  form.elements.selfManaged.addEventListener('change', applySelfManaged);
   function closeEditor(){ bg.classList.remove('open'); editing = -1; }
   function updateProfit(){
     const r = +form.elements.revenue.value||0, c = +form.elements.cost.value||0;
@@ -521,6 +540,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     if(dup>=0 && !confirm(`編號「${no}」已被其他機台使用，仍要儲存嗎？`)) return;
     const idx = editing, m = machines[idx];
     ['status','owner','rent'].forEach(k=> m[k] = form.elements[k].value.trim());
+    m.selfManaged = form.elements.selfManaged.checked;
     flushMoneyInputs();
     m.revenueByMonth = cleanMoneyMap(edRev);   // 有資料的年份都寫完整 12 個月，Firestore merge 才能正確清空某月
     m.costByMonth = cleanMoneyMap(edCost);
