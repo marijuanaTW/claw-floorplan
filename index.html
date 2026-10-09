@@ -150,7 +150,7 @@
   <div class="banner" id="banner">⚠️ 尚未設定雲端（firebaseConfig），目前為「僅本機」模式，資料只存在這台裝置。</div>
 </header>
 <main><div class="floor" id="floor"></div>
-  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10h・共 <span id="verN"></span> 台</div></main>
+  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10i・共 <span id="verN"></span> 台</div></main>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal" role="dialog" aria-modal="true">
@@ -304,7 +304,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     // 中間：3（旁邊兌幣機）、4 6 / 5 7、8
     const CX = 225;
     m(3, CX+13, 180);
-    layout.push({type:'exchanger', x:CX+13+S+G, y:189, w:68, h:44, fs:3.4});   // 兌幣機（3 號右側）
+    layout.push({type:'exchanger', x:CX+13+S+G, y:186, w:50, h:50, fs:3.3, html:'兌幣<br>機'});   // 兌幣機（3 號右側，正方形）
     m(4, CX, 245); m(6, CX+S+G, 245);
     m(5, CX, 310); m(7, CX+S+G, 310);
     m(8, CX+20, 375);
@@ -422,7 +422,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
         el.innerHTML = l.label || '';
         el.title = (l.label||'').replace(/<br>/g,'');
       }
-      else if(l.type==='exchanger'){ el.textContent='兌幣機'; el.title='兌幣機'; if(l.fs) el.style.fontSize = l.fs + 'cqw'; }
+      else if(l.type==='exchanger'){ if(l.html){ el.innerHTML = l.html; el.style.lineHeight = '1.15'; } else el.textContent='兌幣機'; el.title='兌幣機'; if(l.fs) el.style.fontSize = l.fs + 'cqw'; }
       else{
         const idx = mi++, m = machines[idx];
         if(l.big) el.classList.add('big');
