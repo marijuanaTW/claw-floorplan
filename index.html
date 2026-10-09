@@ -150,7 +150,7 @@
   <div class="banner" id="banner">⚠️ 尚未設定雲端（firebaseConfig），目前為「僅本機」模式，資料只存在這台裝置。</div>
 </header>
 <main><div class="floor" id="floor"></div>
-  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10j・共 <span id="verN"></span> 台</div></main>
+  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10k・共 <span id="verN"></span> 台</div></main>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal" role="dialog" aria-modal="true">
@@ -286,13 +286,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
   // ---- 場地二「大寮貓抓」：依照配置圖（藍＝室外、綠＝室內）----
   function buildLayoutVenue2(){
     const W = 400, S = 62, G = 3;
-    const OUT = '#000', RED = '#d21f1f';
-    // 室內木地板：橫向木條＋錯開的接縫＋木紋色調（純 CSS）
-    const WOOD = [
-      'repeating-linear-gradient(0deg, rgba(80,45,15,.45) 0 1px, transparent 1px 4.6cqw)',
-      'repeating-linear-gradient(90deg, transparent 0 21cqw, rgba(80,45,15,.30) 21cqw calc(21cqw + 1px), transparent calc(21cqw + 1px) 34cqw)',
-      'repeating-linear-gradient(0deg, rgba(255,255,255,.07) 0 2.3cqw, rgba(0,0,0,.05) 2.3cqw 4.6cqw)',
-      'linear-gradient(100deg, #dcb987, #c99d66 35%, #d8b27c 60%, #c69860)'].join(',');
+    const OUT = '#8b9099', IN = '#0a0a0a', RED = '#d21f1f';   // 室外＝灰、室內＝黑
     // 樓梯：建築圖樣式（外框、踏階線、行進方向箭頭）— 以平面座標 145×175 的 SVG 繪製
     const treadsH = [...Array(10)].map((_,k)=>`<line x1="${8+k*8.5}" y1="0" x2="${8+k*8.5}" y2="52"/>`).join('');
     const treadsV = [...Array(14)].map((_,k)=>`<line x1="90" y1="${60+k*8}" x2="145" y2="${60+k*8}"/>`).join('');
@@ -311,10 +305,10 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     const area = (x,y,w,h,bg,extra={}) => layout.push({type:'area', x,y,w,h, bg, ...extra});
     const m = (no,x,y) => layout.push({type:'machine', x,y,w:S,h:S, no:String(no)});
     // 背景區域
-    area(135, 0, 265, 447, WOOD);                                                   // 室內（木地板）
+    area(135, 0, 265, 447, IN, {border:'#d1d5db'});                                // 室內（黑底＋淺色邊線）
     area(255, 0, 145, 175, 'transparent', {html:STAIRS, title:'樓梯'});            // 樓梯（L 形）
-    area(185, 112, 70, 34, 'transparent', {label:'室內', color:'#3b1f07', fs:4.5, shadow:'0 0 3px #f5e6cc, 0 0 6px #f5e6cc'});
-    area(4, 430, 40, 110, 'transparent', {label:'室<br>外', color:'#fff', fs:7});
+    area(185, 112, 70, 34, 'transparent', {label:'室內', color:'#fff', fs:4.5});
+    area(4, 430, 40, 110, 'transparent', {label:'室<br>外', color:'#111', fs:7});
     // 上方：14、13、電腦
     m(14, 5, 4); m(13, 5+S+G, 4);
     // 電腦：兩台（兩個相鄰的正方形，總佔位與原本相同）
@@ -422,7 +416,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
   floor.style.aspectRatio = `${W} / ${H}`;
   floor.style.background = floorBg;
   floor.classList.toggle('compact', VENUE.id==='venue2');
-  if(VENUE.id!=='main') floor.style.borderRadius = '4px';
+  if(VENUE.id!=='main'){ floor.style.borderRadius = '4px'; floor.style.border = '2px solid #9ca3af'; }
   const pct = (v,t)=> (v/t*100)+'%';
   const esc = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const money = v => (v===''||v==null||isNaN(+v)) ? '—' : (+v).toLocaleString('zh-TW');
