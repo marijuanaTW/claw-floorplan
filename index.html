@@ -116,7 +116,7 @@
   <div class="banner" id="banner">⚠️ 尚未設定雲端（firebaseConfig），目前為「僅本機」模式，資料只存在這台裝置。</div>
 </header>
 <main><div class="floor" id="floor"></div>
-  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10b・共 <span id="verN"></span> 台</div></main>
+  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10c・共 <span id="verN"></span> 台</div></main>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal" role="dialog" aria-modal="true">
@@ -194,7 +194,11 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
   layout.push({type:'exchanger', x:LX-8, y:y+3, w:S+16, h:56});
   column(LX, y+67, 5);
   // 中間：4 組上下相疊的 2 台
-  [196, 420, 762, 930].forEach(y0 => column(CX, y0, 2));
+  // 4 組平均分布：從上方靠牆機台下方，到左排「兌幣機下方第 4 台」底部為止，組與組間距相等
+  { const left = layout.filter(l=>l.type==='machine');
+    const top = 150, bottom = left[11].y + S, pairH = 2*S + GAP;
+    const gap = (bottom - top - 4*pairH) / 3;
+    for(let k=0;k<4;k++) column(CX, top + k*(pairH+gap), 2); }
   // 右排：7 台 → 兌幣機 → 5 台 → 2 台大型機
   y = column(RX, 122, 7);
   layout.push({type:'exchanger', x:RX-8, y:y+3, w:S+16, h:56});
