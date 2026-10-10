@@ -201,7 +201,7 @@ dialog h2{margin:0 0 6px;font-size:18px}
 <dialog id="dlgTM"><form method="dialog" id="fTM">
   <h2>我的機台</h2>
   <label>機台名稱</label><input name="name" required maxlength="40">
-  <label>地點</label><input name="location" required maxlength="80" placeholder="例如：高雄大寮 貓抓">
+  <label>地點</label><input name="location" required maxlength="80" placeholder="例如：來都來了楠梓店">
   <div class="row"><div><label>類型（選填）</label><select name="type"><option value="">—</option><option>娃娃機</option><option>兌幣機</option><option>其他</option></select></div>
   <div><label>尺寸（選填）</label><select name="size"><option value="">—</option></select></div></div>
   <label>備註</label><textarea name="notes" rows="3" maxlength="500"></textarea>
@@ -229,7 +229,7 @@ const CFG = {
   APPLE_ENABLED: false,        // 需要 Apple Developer 帳號＋Firebase 啟用 Apple 供應商後才改成 true
   EMAIL_LOGIN_ENABLED: false,  // App 審核用示範帳號（需在 Firebase 啟用「電子郵件/密碼」）
   LEGACY_OWNER_EMAILS: ["qew59601211@gmail.com"],
-  VERSION: "v2-2026-10-11b",
+  VERSION: "v2-2026-10-11c",
 };
 const QS = new URLSearchParams(location.search);
 const EMU = QS.has('emu');
