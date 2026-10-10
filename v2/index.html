@@ -229,7 +229,7 @@ const CFG = {
   APPLE_ENABLED: false,        // 需要 Apple Developer 帳號＋Firebase 啟用 Apple 供應商後才改成 true
   EMAIL_LOGIN_ENABLED: false,  // App 審核用示範帳號（需在 Firebase 啟用「電子郵件/密碼」）
   LEGACY_OWNER_EMAILS: ["qew59601211@gmail.com"],
-  VERSION: "v2-2026-10-11a",
+  VERSION: "v2-2026-10-11b",
 };
 const QS = new URLSearchParams(location.search);
 const EMU = QS.has('emu');
@@ -332,8 +332,12 @@ A.onAuthStateChanged(auth, async user=>{
   U = user; stopAll();
   if(!user){ $('hdr').classList.remove('show'); show('scrWelcome'); return; }
   $('whoami').textContent = (user.email || user.displayName || user.uid);
-  let saved = null;
-  try{ const s = await F.getDoc(D('users', user.uid)); saved = s.exists() ? s.data().role : null; }catch(e){ console.warn(e); }
+  let saved = null, udoc = {};
+  try{ const s = await F.getDoc(D('users', user.uid)); udoc = s.exists() ? s.data() : {}; saved = udoc.role || null; }catch(e){ console.warn(e); }
+  if(isLegacyOwner()){
+    if(!saved && !pickedRole) pickedRole = 'owner';   // 舊版場主帳號：預設為場主
+    if(udoc.legacyMigrated !== true){ await runLegacyImport(true); }
+  }
   if(pickedRole){ await setRole(pickedRole); pickedRole = null; }
   else if(saved) ROLE = saved;
   else { const ls = localStorage.getItem('claw2.role'); if(ls){ await setRole(ls); } else { show('scrWelcome'); return; } }
@@ -760,8 +764,9 @@ function convertLegacy(build, d){
   statics.forEach((s,j)=> objects['s'+j] = {type:s.type, x:r2(s.x*k), y:r2(s.y*k), w:r2(s.w*k), h:r2(s.h*k), label:s.label ?? TYPES[s.type].label});
   return {objects, privs, widthM:r2(B.W*k), lengthM:r2(maxY*k), floor:B.floor};
 }
-$('btnMigrate').onclick = async ()=>{
-  openMenu(false); if(!isLegacyOwner()) return;
+$('btnMigrate').onclick = ()=>{ openMenu(false); runLegacyImport(false); };
+async function runLegacyImport(auto){
+  if(!isLegacyOwner()) return false;
   try{
     const [mainS, v2S, metaS] = await Promise.all(['main','venue2','_meta'].map(id=>F.getDoc(D('floorplans',id))));
     const names = (metaS.exists() && metaS.data().names) || {};
@@ -769,7 +774,7 @@ $('btnMigrate').onclick = async ()=>{
     const summary = plan.map(p=>`${p.name}：${p.snap.exists() ? Object.keys(p.snap.data().machines||{}).length+' 台資料' : '（無資料，將用預設佈局）'}`).join('\n');
     const ids = plan.map(p=>`${U.uid}-legacy-${p.key}`);
     const exist = (await Promise.all(ids.map(id=>F.getDoc(D('venues',id))))).filter(s=>s.exists()).length;
-    if(!confirm(`從舊版匯入：\n${summary}\n\n舊資料不會被修改（保留作為備份）。${exist?`\n⚠ 已匯入過 ${exist} 個場地，將會覆蓋新版中這些場地的內容。`:''}\n\n確定匯入？`)) return;
+    if(!auto && !confirm(`從舊版匯入：\n${summary}\n\n舊資料不會被修改（保留作為備份）。${exist?`\n⚠ 已匯入過 ${exist} 個場地，將會覆蓋新版中這些場地的內容。`:''}\n\n確定匯入？`)) return;
     for(let i=0;i<plan.length;i++){
       const p = plan[i], vid = ids[i], d = p.snap.exists() ? p.snap.data() : {};
       const c = convertLegacy(p.build, d), ops = [];
@@ -782,9 +787,12 @@ $('btnMigrate').onclick = async ()=>{
       ops2.push(b=>b.set(D('venues',vid,'finance','shop'), {shopExpenses:d.shopExpenses||{}}));
       await commitChunks(ops2);
     }
-    toast('✅ 舊版資料已匯入（舊資料保留未動）', 4000); V=null;
-  }catch(e){ toast('匯入失敗：'+(e.code||e.message), 6000); console.error(e); }
-};
+    await F.setDoc(D('users',U.uid), {legacyMigrated:true, legacyMigratedAt:ts()}, {merge:true});
+    toast(auto ? '已匯入你之前的場地資料' : '✅ 舊版資料已匯入（舊資料保留未動）', 4000);
+    V = null; if(auto) localStorage.setItem('claw2.venue.'+U.uid, `${U.uid}-legacy-main`);
+    return true;
+  }catch(e){ toast('匯入失敗：'+(e.code||e.message), 6000); console.error(e); return false; }
+}
 
 /* ============================== 台主 ============================== */
 let tms = {}, myLinks = [], claimStat = {};
