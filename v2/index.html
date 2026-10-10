@@ -1,0 +1,872 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>娃娃機台 v2</title>
+<meta name="theme-color" content="#111418">
+<link rel="icon" href="../favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
+<style>
+:root{--bg:#111418;--card:#1b2027;--line:#2c333d;--text:#e8ebef;--muted:#9aa3ae;--accent:#3b82f6;--ok:#16a34a;--bad:#dc2626;--orange:#f97316;--purple:#8b5cf6}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif}
+body{padding-bottom:env(safe-area-inset-bottom)}
+button,select,input,textarea{font:inherit;color:inherit}
+button{background:#2a313b;border:1px solid var(--line);border-radius:9px;padding:8px 12px;cursor:pointer}
+button.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+button.danger{background:#7f1d1d;border-color:#991b1b}
+button:disabled{opacity:.45;cursor:default}
+input,select,textarea{background:#0f1216;border:1px solid var(--line);border-radius:8px;padding:8px;width:100%}
+label{display:block;font-size:13px;color:var(--muted);margin:8px 0 3px}
+.screen{display:none;max-width:760px;margin:0 auto;padding:12px}
+.screen.show{display:block}
+.center{min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px}
+.big{font-size:20px;padding:16px 22px;width:260px;border-radius:14px}
+.muted{color:var(--muted);font-size:13px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0}
+header{position:sticky;top:0;z-index:30;background:rgba(17,20,24,.96);border-bottom:1px solid var(--line);padding:calc(env(safe-area-inset-top) + 8px) 10px 8px;display:none;align-items:center;gap:8px}
+header.show{display:flex}
+header h1{font-size:17px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#menu{position:fixed;inset:0 auto 0 0;width:min(300px,85vw);background:#151a20;border-right:1px solid var(--line);z-index:50;transform:translateX(-102%);transition:.2s;padding:calc(env(safe-area-inset-top) + 14px) 12px 20px;overflow:auto}
+#menu.show{transform:none}
+#shade{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:40;display:none}
+#shade.show{display:block}
+#menu h3{font-size:13px;color:var(--muted);margin:16px 0 6px}
+#menu button{width:100%;text-align:left;margin:3px 0}
+#menu .cur{border-color:var(--accent);background:#1e3a8a}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.row>*{flex:1}
+.toolbar{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.toolbar button{padding:7px 10px;font-size:14px}
+.sum{font-size:14px;line-height:1.7}
+.sum b{font-size:15px}
+.net{font-size:18px;font-weight:800}
+.pos{color:#4ade80}.neg{color:#f87171}
+/* 平面圖 */
+.floorwrap{width:100%;margin:8px 0}
+.floor{position:relative;width:100%;container-type:inline-size;border:2px solid #4b5563;border-radius:6px;overflow:hidden;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.floor.f-dark{background:#0b0d10}.floor.f-outdoor{background:#8b9099}.floor.f-indoor{background:#0a0a0a}
+.floor.editing{outline:3px dashed var(--accent);outline-offset:2px;background-image:linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px)}
+.ob{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;line-height:1.1;cursor:pointer}
+.ob.machine{background:#f8fafc;color:#111;border:2px solid #cbd5e1;border-radius:6%;z-index:3}
+.ob.machine .no{font-weight:900}
+.ob.machine .own{max-width:96%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#374151}
+.ob.machine .tag{white-space:nowrap;display:inline-block;border-radius:4px;padding:0 4%;margin-top:3%;color:#fff;font-weight:700}
+.tag.paid{background:var(--ok)}.tag.unpaid{background:var(--bad)}.tag.self{background:#0891b2}
+.ob.machine.st-maint{border:3px dashed var(--purple);background:#ede9fe}
+.ob.machine.st-vacant{background:#fed7aa;border:3px solid var(--orange)}
+.ob.machine.mine{background:#fde047;border:3px solid #ca8a04}
+.ob.machine.other{background:#cbd5e1;border-color:#94a3b8;cursor:default}
+.ob.exchanger{background:#d21f1f;color:#fff;font-weight:800;border-radius:6px;z-index:3}
+.ob.stairs{background:#ecebe6 repeating-linear-gradient(var(--dir,180deg),transparent 0 9px,#666 9px 10px);color:#d21f1f;font-weight:800;border:2px solid #111;z-index:2}
+.ob.stairs span{background:#ecebe6;padding:0 3px}
+.ob.wall{background:#6b7280 repeating-linear-gradient(45deg,#6b7280 0 4px,#4b5563 4px 8px);color:#fff;z-index:3}
+.ob.counter{background:#fde047;color:#d21f1f;font-weight:800;border-radius:4px;z-index:3}
+.ob.indoor{background:#0a0a0a;border:2px solid #d1d5db;color:#fff;z-index:1}
+.ob.outdoor{background:#8b9099;border:2px dashed #374151;color:#111;z-index:1}
+.ob.indoor,.ob.outdoor{justify-content:flex-start;padding-top:2%;font-weight:700}
+.ob.drag{opacity:.75;outline:3px solid var(--accent);z-index:20}
+.ob.bad{outline:3px solid var(--bad)}
+.ob.readonly{cursor:default}
+/* 對話框 */
+dialog{background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:14px;padding:14px;width:min(94vw,520px);max-height:92vh}
+dialog::backdrop{background:rgba(0,0,0,.6)}
+dialog h2{margin:0 0 6px;font-size:18px}
+.chips{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}
+.chip{padding:7px 0;text-align:center;border-radius:8px;border:1px solid var(--line);background:#2a313b;font-size:13px;cursor:pointer}
+.chip.on{background:var(--ok);border-color:var(--ok);color:#fff}
+.chip.ro{cursor:default}
+.mtab{width:100%;border-collapse:collapse;font-size:13px}
+.mtab td,.mtab th{padding:2px 3px;border-bottom:1px solid var(--line)}
+.mtab input{padding:4px 6px}
+.pick{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.pick button{padding:12px 4px}
+.sizes{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+.sizes button.on{background:var(--accent);border-color:var(--accent)}
+#toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 20px);transform:translateX(-50%);background:#000;border:1px solid var(--line);color:#fff;padding:10px 16px;border-radius:10px;z-index:99;display:none;max-width:90vw}
+.tm{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.badge{display:inline-block;font-size:12px;border-radius:6px;padding:1px 7px;background:#334155}
+.badge.ok{background:var(--ok)}.badge.wait{background:#a16207}
+.emu{background:#7c2d12;color:#fff;text-align:center;font-size:12px;padding:3px}
+</style>
+</head>
+<body>
+<div id="emuBar" class="emu" style="display:none">測試模式（Firebase 模擬器）— 不會動到正式資料</div>
+<header id="hdr">
+  <button id="btnMenu" aria-label="選單">☰</button>
+  <h1 id="title">娃娃機台</h1>
+  <button id="btnSaveAll" style="display:none">全部儲存</button>
+</header>
+<div id="shade"></div>
+<nav id="menu">
+  <div class="muted" id="whoami"></div>
+  <div id="menuOwner">
+    <h3>我的場地</h3>
+    <div id="venueList"></div>
+    <button id="btnNewVenue">＋ 新增場地</button>
+    <h3>目前場地</h3>
+    <button id="btnVenueSettings">場地設定（名稱／尺寸／地板）</button>
+    <button id="btnInvite">台主邀請碼</button>
+    <button id="btnExport">匯出 JSON</button>
+    <button id="btnImport">匯入 JSON</button>
+    <button id="btnDeleteVenue" class="danger">刪除此場地</button>
+    <div id="legacyBox" style="display:none"><h3>舊版資料</h3><button id="btnMigrate">匯入舊版（來都來了、大寮貓抓）</button></div>
+  </div>
+  <h3>帳號</h3>
+  <button id="btnSwitchRole">切換身分（場主／台主）</button>
+  <button onclick="location.href='privacy.html'">隱私權政策</button>
+  <button id="btnLogout">登出</button>
+</nav>
+
+<!-- 歡迎 -->
+<section class="screen" id="scrWelcome"><div class="center">
+  <img src="../icons/icon-192.png" width="88" height="88" alt="" style="border-radius:20px">
+  <h1 style="margin:0">歡迎使用娃娃機台</h1>
+  <div class="muted">請選擇你的身分</div>
+  <button class="big pri" data-role="owner">我是場主</button>
+  <button class="big" data-role="tenant">我是台主</button>
+  <div class="muted" style="max-width:300px">場主：管理場地平面圖、台主租金與每月收支。<br>台主：管理自己的機台，可用邀請碼連結到場地查看位置與繳費狀態。</div>
+  <a class="muted" href="privacy.html">隱私權政策</a>
+</div></section>
+
+<!-- 登入 -->
+<section class="screen" id="scrLogin"><div class="center">
+  <h2 style="margin:0">登入（<span id="loginRole"></span>）</h2>
+  <button class="big pri" id="btnGoogle">使用 Google 登入</button>
+  <button class="big" id="btnApple" style="display:none;background:#000;border-color:#555">使用 Apple 登入</button>
+  <div id="emailBox" style="display:none;width:260px">
+    <input id="emailIn" type="email" placeholder="電子郵件" autocomplete="username">
+    <input id="pwIn" type="password" placeholder="密碼" style="margin-top:6px" autocomplete="current-password">
+    <button class="pri" id="btnEmail" style="width:100%;margin-top:6px">以電子郵件登入</button>
+  </div>
+  <div id="emuBox" style="display:none;width:260px">
+    <input id="emuEmail" type="email" placeholder="測試帳號 email">
+    <button class="pri" id="btnEmu" style="width:100%;margin-top:6px">測試登入（模擬 Google）</button>
+  </div>
+  <div id="loginMsg" class="muted"></div>
+  <button id="btnBack">← 返回</button>
+</div></section>
+
+<!-- 場主 -->
+<section class="screen" id="scrOwner">
+  <div id="noVenue" class="card" style="display:none;text-align:center">
+    <p>還沒有場地。</p><button class="pri" id="btnNewVenue2">＋ 新增第一個場地</button>
+    <p class="muted" id="legacyHint" style="display:none">你有舊版資料，可從左上選單「匯入舊版」一鍵搬過來。</p>
+  </div>
+  <div id="venueView" style="display:none">
+    <div class="row" style="flex-wrap:nowrap">
+      <select id="selY"></select><select id="selM"></select>
+    </div>
+    <div class="card sum" id="sum"></div>
+    <div id="claimsBox"></div>
+    <div class="toolbar">
+      <button id="btnEditLayout">編輯佈局</button>
+      <button id="btnAdd" style="display:none" class="pri">＋ 新增物件</button>
+      <span class="muted" id="layoutHint" style="display:none;align-self:center">拖曳移動（對齊 5 公分），點一下編輯</span>
+    </div>
+    <div class="floorwrap"><div class="floor" id="floor"></div></div>
+    <div class="muted" id="scaleNote"></div>
+  </div>
+</section>
+
+<!-- 台主 -->
+<section class="screen" id="scrTenant">
+  <div class="toolbar"><button class="pri" id="btnAddTM">＋ 新增我的機台</button></div>
+  <div id="tmList"></div>
+  <div id="tPlan" class="card" style="display:none"></div>
+</section>
+
+<!-- 對話框：機台／物件 -->
+<dialog id="dlgObj"><form method="dialog" id="fObj"></form></dialog>
+<!-- 對話框：新增物件 -->
+<dialog id="dlgAdd"><h2>新增物件</h2>
+  <label>娃娃機尺寸</label><div class="sizes" id="addSizes"></div>
+  <button class="pri" id="addMachine" style="width:100%;margin-top:8px">新增娃娃機</button>
+  <label style="margin-top:14px">其他物件</label>
+  <div class="pick" id="addOthers"></div>
+  <div class="muted" id="sizeTable" style="margin-top:10px"></div>
+  <div style="text-align:right;margin-top:10px"><button onclick="this.closest('dialog').close()">關閉</button></div>
+</dialog>
+<!-- 對話框：場地 -->
+<dialog id="dlgVenue"><form method="dialog" id="fVenue">
+  <h2 id="vTitle">新增場地</h2>
+  <label>場地名稱</label><input name="name" required maxlength="40">
+  <div class="row"><div><label>寬（公尺，畫面左右）</label><input name="widthM" type="number" step="0.1" min="1" max="200" required></div>
+  <div><label>長（公尺，畫面上下）</label><input name="lengthM" type="number" step="0.1" min="1" max="400" required></div></div>
+  <label>地板</label><select name="floor"><option value="dark">深色（預設）</option><option value="indoor">室內（黑）</option><option value="outdoor">室外（灰）</option></select>
+  <div class="row" style="margin-top:12px"><button value="cancel" formnovalidate>取消</button><button class="pri" value="ok">儲存</button></div>
+</form></dialog>
+<!-- 對話框：台主機台 -->
+<dialog id="dlgTM"><form method="dialog" id="fTM">
+  <h2>我的機台</h2>
+  <label>機台名稱</label><input name="name" required maxlength="40">
+  <label>地點</label><input name="location" required maxlength="80" placeholder="例如：高雄大寮 貓抓">
+  <div class="row"><div><label>類型（選填）</label><select name="type"><option value="">—</option><option>娃娃機</option><option>兌幣機</option><option>其他</option></select></div>
+  <div><label>尺寸（選填）</label><select name="size"><option value="">—</option></select></div></div>
+  <label>備註</label><textarea name="notes" rows="3" maxlength="500"></textarea>
+  <div class="row" style="margin-top:12px"><button value="del" class="danger" id="tmDel" formnovalidate>刪除</button><button value="cancel" formnovalidate>取消</button><button class="pri" value="ok">儲存</button></div>
+</form></dialog>
+<!-- 對話框：連結場地 -->
+<dialog id="dlgLink"><form method="dialog" id="fLink">
+  <h2>連結到場地</h2>
+  <div class="muted">向場主索取「邀請碼」，並填入你的機台在該場地的編號。場主核准後即可看到位置與繳費狀態。</div>
+  <label>邀請碼</label><input name="code" required maxlength="12" style="text-transform:uppercase" autocomplete="off">
+  <label>機台在場地的編號</label><input name="machineNo" required maxlength="10">
+  <div class="row" style="margin-top:12px"><button value="cancel" formnovalidate>取消</button><button class="pri" value="ok">送出申請</button></div>
+</form></dialog>
+<input type="file" id="fileIn" accept="application/json,.json" style="display:none">
+<div id="toast"></div>
+
+<script type="module">
+/* ============================== 設定 ============================== */
+const CFG = {
+  firebase: {
+    apiKey:"AIzaSyBbiycotwBaRLFhnknAbrhSPIg3VmA4SN4", authDomain:"claw-floorplan-9bb73.firebaseapp.com",
+    projectId:"claw-floorplan-9bb73", storageBucket:"claw-floorplan-9bb73.firebasestorage.app",
+    messagingSenderId:"1013569430626", appId:"1:1013569430626:web:71aa004fdbc08bb3a11d3b" },
+  FB_VER: "13.0.0",
+  APPLE_ENABLED: false,        // 需要 Apple Developer 帳號＋Firebase 啟用 Apple 供應商後才改成 true
+  EMAIL_LOGIN_ENABLED: false,  // App 審核用示範帳號（需在 Firebase 啟用「電子郵件/密碼」）
+  LEGACY_OWNER_EMAILS: ["qew59601211@gmail.com"],
+  VERSION: "v2-2026-10-11a",
+};
+const QS = new URLSearchParams(location.search);
+const EMU = QS.has('emu');
+/* 尺寸表（公尺，正方形佔地）*/
+const SIZES = {'小':0.6,'中':0.8,'大':1.0,'特大':1.2,'超大':1.5};
+const TYPES = {
+  machine:{name:'娃娃機'}, exchanger:{name:'兌幣機',w:0.9,h:0.6,label:'兌幣機'}, stairs:{name:'樓梯',w:1.0,h:2.4,label:'樓梯'},
+  wall:{name:'柱子／牆',w:0.4,h:0.4,label:''}, counter:{name:'櫃台／電腦',w:0.6,h:0.6,label:'電腦'},
+  indoor:{name:'區域：室內',w:2,h:2,label:'室內'}, outdoor:{name:'區域：室外',w:2,h:2,label:'室外'} };
+const isArea = t => t==='indoor' || t==='outdoor';
+const SNAP = 0.05;
+const STATUSES = ['營運中','維修中','待承租'];
+
+/* ============================== 小工具 ============================== */
+const $ = id => document.getElementById(id);
+const esc = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = v => (v===''||v==null||isNaN(+v)) ? 0 : +v;
+const r2 = v => Math.round(v*100)/100;
+const snap = v => r2(Math.round(v/SNAP)*SNAP);
+const money = v => 'NT$' + Math.round(v).toLocaleString('zh-TW');
+let toastT; function toast(t, ms=2500){ const e=$('toast'); e.textContent=t; e.style.display='block'; clearTimeout(toastT); toastT=setTimeout(()=>e.style.display='none', ms); }
+const NOW = new Date(), CUR_Y = NOW.getFullYear(), CUR_M = NOW.getMonth()+1;
+let viewY = CUR_Y, viewM = CUR_M;
+const getMon = (mp,y,m) => (mp && mp[String(y)] && mp[String(y)][String(m)]) ?? '';
+const isPaid = (p,y,m) => !!(p && p.rentPaid && p.rentPaid[String(y)] && p.rentPaid[String(y)][String(m)]);
+function show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('show', s.id===id)); }
+function openMenu(o){ $('menu').classList.toggle('show',o); $('shade').classList.toggle('show',o); }
+$('btnMenu').onclick=()=>openMenu(true); $('shade').onclick=()=>openMenu(false);
+if(EMU) $('emuBar').style.display='block';
+
+/* ============================== Firebase ============================== */
+const base = `https://www.gstatic.com/firebasejs/${CFG.FB_VER}`;
+const [{initializeApp}, A, F] = await Promise.all([import(`${base}/firebase-app.js`), import(`${base}/firebase-auth.js`), import(`${base}/firebase-firestore.js`)]);
+const app = initializeApp(CFG.firebase);
+const auth = A.getAuth(app); auth.languageCode = 'zh-TW';
+const db = F.getFirestore(app);
+if(EMU){ A.connectAuthEmulator(auth, 'http://127.0.0.1:9099', {disableWarnings:true}); F.connectFirestoreEmulator(db, '127.0.0.1', 8080); }
+const D = (...p) => F.doc(db, ...p), C = (...p) => F.collection(db, ...p);
+const ts = () => F.serverTimestamp();
+const CAP = window.Capacitor;
+const NATIVE = (CAP && CAP.isNativePlatform && CAP.isNativePlatform() && CAP.Plugins && CAP.Plugins.FirebaseAuthentication) || null;
+
+let U = null, ROLE = null, pickedRole = null;
+const roleName = r => r==='owner' ? '場主' : '台主';
+
+/* ---------- 歡迎／登入 ---------- */
+document.querySelectorAll('[data-role]').forEach(b=> b.onclick = async ()=>{
+  pickedRole = b.dataset.role; localStorage.setItem('claw2.role', pickedRole);
+  if(U){ await setRole(pickedRole); enter(); } else { $('loginRole').textContent = roleName(pickedRole); show('scrLogin'); }
+});
+$('btnBack').onclick = ()=> show('scrWelcome');
+if(CFG.APPLE_ENABLED) $('btnApple').style.display='';
+if(CFG.EMAIL_LOGIN_ENABLED && !EMU) $('emailBox').style.display='';
+if(EMU) $('emuBox').style.display='';
+const loginErr = e => { const m = String((e && (e.code||e.message)) || e); if(!/cancel|closed-by-user/i.test(m)) $('loginMsg').textContent = '登入失敗：' + m; };
+$('btnGoogle').onclick = async ()=>{
+  $('loginMsg').textContent='';
+  try{
+    if(NATIVE){
+      const r = await NATIVE.signInWithGoogle();
+      if(!r?.credential?.idToken) throw new Error('沒有取得 Google 憑證');
+      await A.signInWithCredential(auth, A.GoogleAuthProvider.credential(r.credential.idToken, r.credential.accessToken||null));
+    } else {
+      const p = new A.GoogleAuthProvider(); p.setCustomParameters({prompt:'select_account'});
+      try{ await A.signInWithPopup(auth, p); }
+      catch(e){ if(['auth/popup-blocked','auth/operation-not-supported-in-this-environment'].includes(e.code)) await A.signInWithRedirect(auth, p); else throw e; }
+    }
+  }catch(e){ loginErr(e); }
+};
+// Sign in with Apple（需 CFG.APPLE_ENABLED；Firebase 主控台要先啟用 Apple 供應商）
+$('btnApple').onclick = async ()=>{
+  $('loginMsg').textContent='';
+  try{
+    if(NATIVE){
+      const r = await NATIVE.signInWithApple();   // capacitor 設定 providers 需加入 "apple.com"
+      const p = new A.OAuthProvider('apple.com');
+      await A.signInWithCredential(auth, p.credential({idToken:r.credential.idToken, rawNonce:r.credential.nonce}));
+    } else {
+      const p = new A.OAuthProvider('apple.com'); p.addScope('email'); p.addScope('name'); p.setCustomParameters({locale:'zh_TW'});
+      try{ await A.signInWithPopup(auth, p); }
+      catch(e){ if(e.code==='auth/popup-blocked') await A.signInWithRedirect(auth, p); else throw e; }
+    }
+  }catch(e){ loginErr(e); }
+};
+$('btnEmail').onclick = async ()=>{ try{ await A.signInWithEmailAndPassword(auth, $('emailIn').value.trim(), $('pwIn').value); }catch(e){ loginErr(e); } };
+// 模擬器專用：以假的 Google 憑證登入（只有連到 Auth 模擬器時有效）
+$('btnEmu').onclick = async ()=>{
+  const email = $('emuEmail').value.trim(); if(!email) return;
+  try{ await A.signInWithCredential(auth, A.GoogleAuthProvider.credential(JSON.stringify({sub:'emu-'+email.replace(/\W/g,'_'), email, email_verified:true, name:email.split('@')[0]}))); }catch(e){ loginErr(e); }
+};
+A.getRedirectResult(auth).catch(loginErr);
+$('btnLogout').onclick = async ()=>{ if(!confirm('確定要登出嗎？')) return; openMenu(false); stopAll(); await A.signOut(auth); if(NATIVE){ try{ await NATIVE.signOut(); }catch(e){} } };
+$('btnSwitchRole').onclick = ()=>{ openMenu(false); stopAll(); $('hdr').classList.remove('show'); show('scrWelcome'); };
+
+async function setRole(r){
+  ROLE = r;
+  await F.setDoc(D('users', U.uid), {role:r, email:U.email||'', name:U.displayName||'', updatedAt:ts()}, {merge:true}).catch(e=>console.warn('role', e.code));
+}
+A.onAuthStateChanged(auth, async user=>{
+  U = user; stopAll();
+  if(!user){ $('hdr').classList.remove('show'); show('scrWelcome'); return; }
+  $('whoami').textContent = (user.email || user.displayName || user.uid);
+  let saved = null;
+  try{ const s = await F.getDoc(D('users', user.uid)); saved = s.exists() ? s.data().role : null; }catch(e){ console.warn(e); }
+  if(pickedRole){ await setRole(pickedRole); pickedRole = null; }
+  else if(saved) ROLE = saved;
+  else { const ls = localStorage.getItem('claw2.role'); if(ls){ await setRole(ls); } else { show('scrWelcome'); return; } }
+  enter();
+});
+function enter(){
+  $('hdr').classList.add('show');
+  $('menuOwner').style.display = ROLE==='owner' ? '' : 'none';
+  $('btnSaveAll').style.display = ROLE==='owner' ? '' : 'none';
+  if(ROLE==='owner') startOwner(); else startTenant();
+}
+let unsubs = [];
+function stopAll(){ unsubs.forEach(f=>{ try{f();}catch(e){} }); unsubs = []; vUnsubs.forEach(f=>f()); vUnsubs=[]; }
+const isLegacyOwner = () => U && U.emailVerified !== false && CFG.LEGACY_OWNER_EMAILS.includes((U.email||'').toLowerCase());
+
+/* ============================== 平面圖繪製 ============================== */
+// opts: {mode:'owner'|'tenant', mineId, editing}
+function renderFloor(el, venue, objList, opts){
+  const W = venue.widthM, L = venue.lengthM;
+  el.className = 'floor f-' + (venue.floor||'dark') + (opts.editing ? ' editing' : '');
+  el.style.aspectRatio = `${W} / ${L}`;
+  el.style.backgroundSize = opts.editing ? `${100/W*0.5}cqw ${100/W*0.5}cqw` : '';
+  const html = [];
+  for(const o of objList){
+    const pos = `left:${o.x/W*100}%;top:${o.y/L*100}%;width:${o.w/W*100}%;height:${o.h/L*100}%;`;
+    const fs = Math.min(o.w, o.h)/W*100;   // 物件短邊（cqw）
+    if(o.type==='machine'){
+      let cls = 'ob machine', inner;
+      if(opts.mode==='tenant'){
+        if(o.id===opts.mineId){ cls += ' mine readonly'; inner = `<span class="no" style="font-size:${fs*.3}cqw">${esc(o.no)}</span><span style="font-size:${fs*.16}cqw;font-weight:700">我的機台</span>`; }
+        else { cls += ' other readonly'; inner = ''; }
+      } else {
+        const p = priv[o.id] || {};
+        if(o.status==='維修中') cls += ' st-maint'; else if(o.status==='待承租') cls += ' st-vacant';
+        const tag = p.selfManaged ? '<span class="tag self">自管</span>' : (isPaid(p,viewY,viewM) ? '<span class="tag paid">已繳</span>' : '<span class="tag unpaid">未繳</span>');
+        inner = `<span class="no" style="font-size:${fs*.28}cqw">${esc(o.no)}</span><span class="own" style="font-size:${fs*.15}cqw">${esc(p.owner||(o.status==='待承租'?'待承租':''))}${links[o.id]?' 🔗':''}</span><span style="font-size:${fs*.14}cqw">${tag}</span>`;
+      }
+      html.push(`<div class="${cls}" data-id="${o.id}" style="${pos}">${inner}</div>`);
+    } else {
+      const lab = esc(o.label ?? TYPES[o.type]?.label ?? '');
+      const f = isArea(o.type) ? Math.min(4.5, fs*.25) : fs*.24;
+      const extra = o.type==='stairs' ? `--dir:${o.w>o.h?'90deg':'180deg'};` : '';
+      const inner = o.type==='stairs' ? `<span style="font-size:${f}cqw">${lab}</span>` : `<span style="font-size:${f}cqw">${lab}</span>`;
+      html.push(`<div class="ob ${o.type}${opts.mode==='tenant'?' readonly':''}" data-id="${o.id}" style="${pos}${extra}">${inner}</div>`);
+    }
+  }
+  el.innerHTML = html.join('');
+}
+
+/* ============================== 場主 ============================== */
+let venues = [], V = null, venue = null, objs = {}, priv = {}, shop = {}, links = {}, claims = [], vUnsubs = [], editing = false;
+const objList = () => Object.entries(objs).map(([id,o])=>({id,...o})).sort((a,b)=> (isArea(b.type)-isArea(a.type)));
+const machines = () => objList().filter(o=>o.type==='machine');
+
+function startOwner(){
+  show('scrOwner'); $('legacyBox').style.display = isLegacyOwner() ? '' : 'none';
+  unsubs.push(F.onSnapshot(F.query(C('venues'), F.where('ownerUid','==',U.uid)), {includeMetadataChanges:true}, snap=>{
+    // 只用已寫入伺服器的場地（剛建立、尚未確認的場地，子集合規則會因讀不到場地而拒絕）
+    venues = snap.docs.filter(d=>!d.metadata.hasPendingWrites || venues.some(v=>v.id===d.id)).map(d=>({id:d.id, ...d.data()})).sort((a,b)=> String(a.name).localeCompare(String(b.name),'zh-Hant'));
+    renderVenueList();
+    if(!venues.length){ V=null; venue=null; $('noVenue').style.display=''; $('venueView').style.display='none'; $('title').textContent='場主'; $('legacyHint').style.display = isLegacyOwner()?'':'none'; return; }
+    $('noVenue').style.display='none';
+    const want = V || localStorage.getItem('claw2.venue.'+U.uid);
+    const pick = venues.find(v=>v.id===want) || venues[0];
+    if(pick.id !== V) selectVenue(pick.id); else { venue = pick; renderOwner(); }
+  }, err=> toast('讀取場地失敗：'+err.code, 5000)));
+}
+function renderVenueList(){
+  $('venueList').innerHTML = venues.map(v=>`<button data-v="${v.id}" class="${v.id===V?'cur':''}">${esc(v.name)} <span class="muted">${r2(v.widthM)}×${r2(v.lengthM)} m</span></button>`).join('') || '<div class="muted">（尚無）</div>';
+  $('venueList').querySelectorAll('[data-v]').forEach(b=> b.onclick=()=>{ selectVenue(b.dataset.v); openMenu(false); });
+}
+function selectVenue(id){
+  vUnsubs.forEach(f=>f()); vUnsubs = [];
+  V = id; venue = venues.find(v=>v.id===id); localStorage.setItem('claw2.venue.'+U.uid, id);
+  objs={}; priv={}; shop={}; links={}; claims=[]; editing=false;
+  $('venueView').style.display=''; renderVenueList();
+  const err = w => e => { console.warn(w, e.code); if(!selectVenue.retried){ selectVenue.retried = true; setTimeout(()=>{ if(V===id) selectVenue(id); }, 1500); } else toast(`讀取${w}失敗：${e.code}`, 5000); };
+  setTimeout(()=>{ selectVenue.retried = false; }, 5000);
+  vUnsubs.push(F.onSnapshot(C('venues',id,'objects'), s=>{ objs = Object.fromEntries(s.docs.map(d=>[d.id,d.data()])); renderOwner(); }, err('物件')));
+  vUnsubs.push(F.onSnapshot(C('venues',id,'private'), s=>{ priv = Object.fromEntries(s.docs.map(d=>[d.id,d.data()])); renderOwner(); }, err('機台資料')));
+  vUnsubs.push(F.onSnapshot(D('venues',id,'finance','shop'), s=>{ shop = (s.exists() && s.data().shopExpenses) || {}; renderSummary(); }, err('收支')));
+  vUnsubs.push(F.onSnapshot(C('venues',id,'links'), s=>{ links = Object.fromEntries(s.docs.map(d=>[d.id,d.data()])); renderOwner(); }, err('連結')));
+  vUnsubs.push(F.onSnapshot(F.query(C('venues',id,'claims'), F.where('status','==','pending')), s=>{ claims = s.docs.map(d=>({id:d.id,...d.data()})); renderClaims(); }, err('申請')));
+}
+function fillMonthSel(){
+  const ys = new Set([CUR_Y-1, CUR_Y, CUR_Y+1, viewY]);
+  Object.values(priv).forEach(p=> Object.keys(p.rentPaid||{}).forEach(y=>ys.add(+y)));
+  $('selY').innerHTML = [...ys].sort().map(y=>`<option value="${y}" ${y===viewY?'selected':''}>${y} 年</option>`).join('');
+  $('selM').innerHTML = [...Array(12)].map((_,k)=>`<option value="${k+1}" ${k+1===viewM?'selected':''}>${k+1} 月</option>`).join('');
+}
+$('selY').onchange = e=>{ viewY=+e.target.value; renderOwner(); };
+$('selM').onchange = e=>{ viewM=+e.target.value; renderOwner(); };
+function renderOwner(){
+  if(!venue) return;
+  $('title').textContent = venue.name;
+  fillMonthSel(); renderSummary();
+  renderFloor($('floor'), venue, objList(), {mode:'owner', editing});
+  $('scaleNote').textContent = `場地 ${r2(venue.widthM)} m（寬）× ${r2(venue.lengthM)} m（長），共 ${machines().length} 台娃娃機・${CFG.VERSION}`;
+}
+function monthStats(y, m){
+  const ms = machines(); let paidN=0, unpaidN=0, selfN=0, collected=0, owed=0, sRev=0, sCost=0, tRev=0, tCost=0;
+  for(const o of ms){ const p = priv[o.id]||{};
+    const rev = num(getMon(p.revenueByMonth,y,m)), cost = num(getMon(p.costByMonth,y,m));
+    if(p.selfManaged){ selfN++; sRev+=rev; sCost+=cost; continue; }
+    tRev+=rev; tCost+=cost;
+    if(isPaid(p,y,m)){ paidN++; collected+=num(p.rent); } else { unpaidN++; owed+=num(p.rent); } }
+  return {paidN, unpaidN, selfN, collected, owed, sRev, sCost, tRev, tCost};
+}
+function renderSummary(){
+  if(!venue) return;
+  const s = monthStats(viewY, viewM);
+  let arrears = 0; for(let k=1;k<=viewM;k++) arrears += monthStats(viewY,k).owed;
+  const ex = (shop[viewY]||{})[viewM] || {rent:'',electricity:''};
+  const net = s.collected + s.sRev - s.sCost - num(ex.rent) - num(ex.electricity);
+  $('sum').innerHTML = `<div><b>${viewY}/${viewM}</b>　已繳 <b style="color:#4ade80">${s.paidN}</b>　未繳 <b style="color:#f87171">${s.unpaidN}</b>　自管 <b>${s.selfN}</b></div>
+   <div>本月待收 <b>${money(s.owed)}</b>　累計未繳（1–${viewM}月）<b>${money(arrears)}</b></div>
+   <div class="row" style="margin:6px 0;flex-wrap:nowrap"><div><label style="margin:0">房租</label><input id="exRent" type="number" inputmode="numeric" value="${esc(ex.rent)}"></div><div><label style="margin:0">電費</label><input id="exElec" type="number" inputmode="numeric" value="${esc(ex.electricity)}"></div></div>
+   <div>每月總淨收入 <span class="net ${net>=0?'pos':'neg'}">${money(net)}</span></div>
+   <div class="muted">＝ 已收租金 ${money(s.collected)} ＋ 自管營收 ${money(s.sRev)} − 自管成本 ${money(s.sCost)} − 房租 ${money(num(ex.rent))} − 電費 ${money(num(ex.electricity))}</div>
+   <div class="muted">機台營收/成本（台主，不計入）：${money(s.tRev)} / ${money(s.tCost)}</div>`;
+  const saveEx = async ()=>{ const v = {rent:$('exRent').value.trim(), electricity:$('exElec').value.trim()};
+    (shop[viewY]=shop[viewY]||{})[viewM]=v;
+    try{ await F.setDoc(D('venues',V,'finance','shop'), {shopExpenses:{[viewY]:{[viewM]:v}}, updatedAt:ts()}, {merge:true}); toast('已儲存房租／電費'); }catch(e){ toast('儲存失敗：'+e.code); } };
+  $('exRent').onchange = saveEx; $('exElec').onchange = saveEx;
+}
+
+/* ---------- 物件點擊／拖曳 ---------- */
+function rectsOverlap(a,b){ return a.x < b.x+b.w-0.001 && b.x < a.x+a.w-0.001 && a.y < b.y+b.h-0.001 && b.y < a.y+a.h-0.001; }
+function blocked(r, selfId, type){
+  if(r.x < -0.001 || r.y < -0.001 || r.x+r.w > venue.widthM+0.001 || r.y+r.h > venue.lengthM+0.001) return '超出場地範圍';
+  if(isArea(type)) return null;
+  for(const o of objList()) if(o.id!==selfId && !isArea(o.type) && rectsOverlap(r,o)) return '與其他物件重疊';
+  return null;
+}
+let drag = null;
+$('floor').addEventListener('pointerdown', e=>{
+  const el = e.target.closest('.ob'); if(!el) return;
+  const id = el.dataset.id, o = objs[id];
+  drag = {id, el, sx:e.clientX, sy:e.clientY, moved:false, o, ppm: $('floor').clientWidth / venue.widthM};
+  if(editing){ el.setPointerCapture(e.pointerId); e.preventDefault(); }
+});
+$('floor').addEventListener('pointermove', e=>{
+  if(!drag || !editing) return;
+  const dx = e.clientX-drag.sx, dy = e.clientY-drag.sy;
+  if(!drag.moved && Math.hypot(dx,dy) < 6) return;
+  drag.moved = true; drag.el.classList.add('drag');
+  const nx = snap(drag.o.x + dx/drag.ppm), ny = snap(drag.o.y + dy/drag.ppm);
+  drag.nx = nx; drag.ny = ny;
+  drag.el.style.left = nx/venue.widthM*100+'%'; drag.el.style.top = ny/venue.lengthM*100+'%';
+  drag.el.classList.toggle('bad', !!blocked({x:nx,y:ny,w:drag.o.w,h:drag.o.h}, drag.id, drag.o.type));
+});
+$('floor').addEventListener('pointerup', async e=>{
+  const d = drag; drag = null; if(!d) return;
+  if(!d.moved){ openObj(d.id); return; }
+  const r = {x:d.nx, y:d.ny, w:d.o.w, h:d.o.h}, why = blocked(r, d.id, d.o.type);
+  if(why){ toast(why + '，已復原'); renderOwner(); return; }
+  objs[d.id] = {...d.o, x:r.x, y:r.y}; renderOwner();
+  try{ await F.setDoc(D('venues',V,'objects',d.id), {x:r.x, y:r.y}, {merge:true}); }catch(err){ toast('儲存位置失敗：'+err.code); }
+});
+$('floor').addEventListener('pointercancel', ()=>{ drag=null; renderOwner(); });
+$('btnEditLayout').onclick = ()=>{ editing = !editing; $('btnEditLayout').textContent = editing ? '完成佈局' : '編輯佈局'; $('btnAdd').style.display = editing?'':'none'; $('layoutHint').style.display = editing?'':'none'; $('floor').style.touchAction = editing ? 'none' : 'pan-y'; renderOwner(); };
+
+/* ---------- 新增物件 ---------- */
+let addSize = '中';
+$('sizeTable').innerHTML = '尺寸表（佔地，公尺）：' + Object.entries(SIZES).map(([k,v])=>`${k} ${v}×${v}`).join('、') + '<br>其他：' + Object.entries(TYPES).filter(([k])=>k!=='machine').map(([k,t])=>`${t.name} ${t.w}×${t.h}`).join('、') + '（可在物件設定改尺寸）';
+function renderAddSizes(){ $('addSizes').innerHTML = Object.keys(SIZES).map(k=>`<button data-s="${k}" class="${k===addSize?'on':''}">${k}<br><span class="muted">${SIZES[k]}m</span></button>`).join(''); $('addSizes').querySelectorAll('button').forEach(b=> b.onclick=()=>{ addSize=b.dataset.s; renderAddSizes(); }); }
+renderAddSizes();
+$('addOthers').innerHTML = Object.entries(TYPES).filter(([k])=>k!=='machine').map(([k,t])=>`<button data-t="${k}">${t.name}</button>`).join('');
+$('btnAdd').onclick = ()=> $('dlgAdd').showModal();
+function freeSpot(w,h,type){
+  if(isArea(type)) return {x:0,y:0};
+  for(let y=0; y<=venue.lengthM-h+1e-9; y=r2(y+0.1)) for(let x=0; x<=venue.widthM-w+1e-9; x=r2(x+0.1)) if(!blocked({x,y,w,h},null,type)) return {x,y};
+  return null;
+}
+async function addObject(type, size){
+  const t = TYPES[type]; const w = type==='machine' ? SIZES[size] : t.w, h = type==='machine' ? SIZES[size] : t.h;
+  const p = freeSpot(w,h,type); if(!p){ toast('場地沒有足夠空位，請先調整其他物件或場地尺寸'); return; }
+  const ref = F.doc(C('venues',V,'objects'));
+  const o = {type, x:p.x, y:p.y, w, h, createdAt:ts()};
+  if(type==='machine'){ const nums = machines().map(m=>parseInt(m.no)).filter(Number.isFinite); Object.assign(o, {size, no:String((nums.length?Math.max(...nums):0)+1), status:'營運中'}); }
+  else o.label = t.label;
+  try{ await F.setDoc(ref, o); $('dlgAdd').close(); toast(`已新增${t.name}（${r2(p.x)}, ${r2(p.y)} m），可拖曳調整`); }catch(e){ toast('新增失敗：'+e.code); }
+}
+$('addMachine').onclick = ()=> addObject('machine', addSize);
+$('addOthers').querySelectorAll('[data-t]').forEach(b=> b.onclick=()=> addObject(b.dataset.t));
+
+/* ---------- 物件／機台編輯 ---------- */
+let edYear = CUR_Y;
+function openObj(id){
+  const o = objs[id]; if(!o) return;
+  const f = $('fObj');
+  if(o.type!=='machine'){
+    f.innerHTML = `<h2>${esc(TYPES[o.type]?.name||o.type)}</h2>
+      <label>標籤文字</label><input name="label" value="${esc(o.label??'')}" maxlength="20">
+      <div class="row"><div><label>寬（m）</label><input name="w" type="number" step="0.05" min="0.1" value="${o.w}"></div><div><label>長（m）</label><input name="h" type="number" step="0.05" min="0.1" value="${o.h}"></div></div>
+      <div class="muted">位置：${r2(o.x)}, ${r2(o.y)} m（在「編輯佈局」中拖曳）</div>
+      <div class="row" style="margin-top:12px"><button value="del" class="danger" formnovalidate>刪除</button><button value="cancel" formnovalidate>取消</button><button class="pri" value="ok">儲存</button></div>`;
+    $('dlgObj').onclose = async ()=>{
+      const rv = $('dlgObj').returnValue;
+      if(rv==='del'){ if(confirm('確定刪除？')) await F.deleteDoc(D('venues',V,'objects',id)).catch(e=>toast('刪除失敗：'+e.code)); return; }
+      if(rv!=='ok') return;
+      const w = r2(+f.elements.w.value), h = r2(+f.elements.h.value);
+      const why = blocked({x:o.x,y:o.y,w,h}, id, o.type); if(why){ toast(why+'，尺寸未變更'); }
+      const patch = {label:f.elements.label.value.trim()}; if(!why){ patch.w=w; patch.h=h; }
+      await F.setDoc(D('venues',V,'objects',id), patch, {merge:true}).then(()=>toast('已儲存')).catch(e=>toast('儲存失敗：'+e.code));
+    };
+    $('dlgObj').returnValue=''; $('dlgObj').showModal(); return;
+  }
+  const p = structuredClone(priv[id] || {});
+  p.rentPaid ||= {}; p.revenueByMonth ||= {}; p.costByMonth ||= {};
+  edYear = viewY;
+  const ln = links[id];
+  const sizeOpts = Object.keys(SIZES).map(k=>`<option ${o.size===k?'selected':''}>${k}</option>`).join('') + (SIZES[o.size] ? '' : `<option value="" selected>自訂 ${r2(o.w)}×${r2(o.h)} m</option>`);
+  f.innerHTML = `<h2>機台 ${esc(o.no)}</h2>
+    <div class="row"><div><label>編號</label><input name="no" value="${esc(o.no)}" maxlength="10"></div>
+    <div><label>狀態</label><select name="status">${STATUSES.map(s=>`<option ${o.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+    <div><label>尺寸</label><select name="size">${sizeOpts}</select></div></div>
+    <label style="display:flex;gap:8px;align-items:center;color:var(--text);margin-top:10px"><input type="checkbox" name="selfManaged" style="width:20px;height:20px" ${p.selfManaged?'checked':''}> 未承租（自己管理）</label>
+    <div class="row"><div><label>台主名字</label><input name="owner" value="${esc(p.owner||'')}" maxlength="30"></div><div><label>台主月租金</label><input name="rent" type="number" inputmode="numeric" value="${esc(p.rent||'')}"></div></div>
+    ${ln ? `<div class="card" style="padding:8px">🔗 已連結台主帳號：${esc(ln.tenantName||'')} ${esc(ln.tenantEmail||'')}（台主可看到此機台位置與自己的繳費狀態）<br><button value="unlink" formnovalidate style="margin-top:6px">解除連結</button></div>` : ''}
+    <div class="row" style="margin-top:8px;flex-wrap:nowrap"><label style="margin:0;flex:none">年度</label><select id="edY">${[CUR_Y-1,CUR_Y,CUR_Y+1].map(y=>`<option ${y===edYear?'selected':''}>${y}</option>`).join('')}</select></div>
+    <label>每月租金繳納（點選切換已繳）</label><div class="chips" id="edChips"></div>
+    <label>每月營收／成本</label><div style="max-height:30vh;overflow:auto"><table class="mtab" id="edTab"></table></div>
+    <div class="muted" id="edNet"></div>
+    <label>備註</label><input name="notes" value="${esc(p.notes||'')}" maxlength="200">
+    <div class="row" style="margin-top:12px"><button value="del" class="danger" formnovalidate>刪除</button><button value="cancel" formnovalidate>取消</button><button class="pri" value="ok">儲存</button></div>`;
+  const syncMoney = ()=>{ f.querySelectorAll('#edTab input').forEach(i=>{ const [k,y,m] = i.dataset.k.split('|'); ((p[k][y] ||= {}))[m] = i.value.trim(); }); };
+  const drawYear = ()=>{
+    const y = String(edYear), dis = f.elements.selfManaged.checked;
+    $('edChips').innerHTML = [...Array(12)].map((_,k)=>`<div class="chip ${isPaid(p,y,k+1)?'on':''}" data-m="${k+1}" style="${dis?'opacity:.35;pointer-events:none':''}">${k+1}月</div>`).join('');
+    $('edChips').querySelectorAll('.chip').forEach(c=> c.onclick=()=>{ (p.rentPaid[y] ||= {}); p.rentPaid[y][c.dataset.m] = !p.rentPaid[y][c.dataset.m]; c.classList.toggle('on'); });
+    $('edTab').innerHTML = '<tr><th>月</th><th>營收</th><th>成本</th><th>淨</th></tr>' + [...Array(12)].map((_,k)=>{ const m=k+1, rv=getMon(p.revenueByMonth,y,m), cs=getMon(p.costByMonth,y,m);
+      return `<tr><td>${m}</td><td><input data-k="revenueByMonth|${y}|${m}" type="number" inputmode="numeric" value="${esc(rv)}"></td><td><input data-k="costByMonth|${y}|${m}" type="number" inputmode="numeric" value="${esc(cs)}"></td><td>${rv===''&&cs===''?'':Math.round(num(rv)-num(cs))}</td></tr>`; }).join('');
+    const yr = [...Array(12)].reduce((a,_,k)=>a+num(getMon(p.revenueByMonth,y,k+1))-num(getMon(p.costByMonth,y,k+1)),0);
+    $('edNet').textContent = `${y} 年機台淨額：${money(yr)}` + (dis ? '（自管：計入每月總淨收入）' : '（台主所有，不計入店面淨收入）');
+    f.elements.rent.disabled = dis;
+  };
+  f.addEventListener('input', e=>{ if(e.target.closest('#edTab')){ syncMoney(); const y=String(edYear); const yr=[...Array(12)].reduce((a,_,k)=>a+num(getMon(p.revenueByMonth,y,k+1))-num(getMon(p.costByMonth,y,k+1)),0);
+    const tr=e.target.closest('tr'); const [a,c]=tr.querySelectorAll('input'); tr.lastElementChild.textContent = (a.value===''&&c.value==='')?'':Math.round(num(a.value)-num(c.value));
+    $('edNet').textContent = $('edNet').textContent.replace(/NT\$[-\d,]+/, money(yr)); } });
+  f.querySelector('#edY').onchange = e=>{ syncMoney(); edYear=+e.target.value; drawYear(); };
+  f.elements.selfManaged.onchange = ()=>{ syncMoney(); drawYear(); };
+  drawYear();
+  $('dlgObj').onclose = async ()=>{
+    const rv = $('dlgObj').returnValue;
+    if(rv==='del'){ if(!confirm(`確定刪除機台 ${o.no}？（資料一併刪除）`)) return;
+      const b = F.writeBatch(db); b.delete(D('venues',V,'objects',id)); b.delete(D('venues',V,'private',id)); if(ln) b.delete(D('venues',V,'links',id));
+      await b.commit().then(()=>toast('已刪除')).catch(e=>toast('刪除失敗：'+e.code)); return; }
+    if(rv==='unlink'){ await unlink(id); return; }
+    if(rv!=='ok') return;
+    syncMoney();
+    const E = f.elements, size = E.size.value;
+    const op = {no:E.no.value.trim(), status:E.status.value};
+    if(size && SIZES[size] && size!==o.size){ const w=SIZES[size]; const why = blocked({x:o.x,y:o.y,w,h:w}, id, 'machine'); if(why) toast('尺寸變更後'+why+'，尺寸未變更'); else Object.assign(op,{size,w,h:w}); }
+    const np = {owner:E.owner.value.trim(), rent:E.rent.value.trim(), selfManaged:E.selfManaged.checked, notes:E.notes.value.trim(), rentPaid:p.rentPaid, revenueByMonth:p.revenueByMonth, costByMonth:p.costByMonth, updatedAt:ts()};
+    const b = F.writeBatch(db);
+    b.set(D('venues',V,'objects',id), op, {merge:true});
+    b.set(D('venues',V,'private',id), np);
+    if(ln) b.set(D('venues',V,'links',id), {tenantUid:ln.tenantUid, no:op.no, rent:np.selfManaged?'':np.rent, rentPaid:np.rentPaid, venueName:venue.name, updatedAt:ts()}, {merge:true});
+    await b.commit().then(()=>toast('已儲存')).catch(e=>toast('儲存失敗：'+e.code, 5000));
+  };
+  $('dlgObj').returnValue=''; $('dlgObj').showModal();
+}
+
+/* ---------- 全部儲存 ---------- */
+async function commitChunks(ops){
+  for(let i=0;i<ops.length;i+=400){ const b = F.writeBatch(db); ops.slice(i,i+400).forEach(fn=>fn(b)); await b.commit(); }
+}
+$('btnSaveAll').onclick = async ()=>{
+  if(!V) return;
+  const ops = [];
+  for(const [id,o] of Object.entries(objs)) ops.push(b=>b.set(D('venues',V,'objects',id), o, {merge:true}));
+  for(const [id,p] of Object.entries(priv)) ops.push(b=>b.set(D('venues',V,'private',id), p, {merge:true}));
+  ops.push(b=>b.set(D('venues',V,'finance','shop'), {shopExpenses:shop, updatedAt:ts()}, {merge:true}));
+  try{ await commitChunks(ops); toast(`✅ 全部儲存成功（${Object.keys(objs).length} 個物件）`); }catch(e){ toast('❌ 儲存失敗：'+e.code, 5000); }
+};
+
+/* ---------- 場地新增／設定／刪除 ---------- */
+function venueDialog(v){
+  const f = $('fVenue'); $('vTitle').textContent = v ? '場地設定' : '新增場地';
+  f.elements.name.value = v?.name || ''; f.elements.widthM.value = v?.widthM ? r2(v.widthM) : ''; f.elements.lengthM.value = v?.lengthM ? r2(v.lengthM) : ''; f.elements.floor.value = v?.floor || 'dark';
+  $('dlgVenue').returnValue=''; $('dlgVenue').showModal();
+  $('dlgVenue').onclose = async ()=>{
+    if($('dlgVenue').returnValue!=='ok') return;
+    const d = {name:f.elements.name.value.trim(), widthM:r2(+f.elements.widthM.value), lengthM:r2(+f.elements.lengthM.value), floor:f.elements.floor.value};
+    if(v){ const out = objList().filter(o=>!isArea(o.type) && (o.x+o.w>d.widthM+0.001 || o.y+o.h>d.lengthM+0.001));
+      if(out.length && !confirm(`有 ${out.length} 個物件會超出新尺寸，仍要變更？`)) return;
+      await F.updateDoc(D('venues',v.id), {...d, updatedAt:ts()}).then(()=>toast('已儲存')).catch(e=>toast('失敗：'+e.code)); }
+    else { const ref = F.doc(C('venues')); await F.setDoc(ref, {...d, ownerUid:U.uid, createdAt:ts()}).then(()=>{ V=null; localStorage.setItem('claw2.venue.'+U.uid, ref.id); toast('已建立場地'); }).catch(e=>toast('建立失敗：'+e.code)); }
+  };
+}
+$('btnNewVenue').onclick = ()=>{ openMenu(false); venueDialog(null); };
+$('btnNewVenue2').onclick = ()=> venueDialog(null);
+$('btnVenueSettings').onclick = ()=>{ openMenu(false); if(venue) venueDialog(venue); };
+$('btnDeleteVenue').onclick = async ()=>{
+  openMenu(false); if(!venue) return;
+  if(prompt(`刪除「${venue.name}」及所有機台資料，無法復原。\n請輸入場地名稱確認：`) !== venue.name) return;
+  try{
+    const ops = [];
+    for(const sub of ['objects','private','finance','links','members','claims']){ const s = await F.getDocs(C('venues',V,sub)); s.docs.forEach(d=> ops.push(b=>b.delete(d.ref))); }
+    if(venue.inviteCode) ops.push(b=>b.delete(D('inviteCodes', venue.inviteCode)));
+    await commitChunks(ops); await F.deleteDoc(D('venues',V)); V=null; toast('已刪除場地');
+  }catch(e){ toast('刪除失敗：'+e.code, 5000); }
+};
+
+/* ---------- 邀請碼／台主連結 ---------- */
+const genCode = ()=>{ const a='ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; const r=crypto.getRandomValues(new Uint8Array(8)); return [...r].map(x=>a[x%a.length]).join(''); };
+$('btnInvite').onclick = async ()=>{
+  openMenu(false); if(!venue) return;
+  let code = venue.inviteCode;
+  if(code && !confirm(`目前邀請碼：${code}\n\n按「確定」產生新代碼（舊代碼失效），按「取消」保留。`)){ navigator.clipboard?.writeText(code).catch(()=>{}); return; }
+  try{
+    const nc = genCode();
+    await F.setDoc(D('inviteCodes', nc), {venueId:V, ownerUid:U.uid, createdAt:ts()});
+    if(code) await F.deleteDoc(D('inviteCodes', code)).catch(()=>{});
+    await F.updateDoc(D('venues',V), {inviteCode:nc});
+    navigator.clipboard?.writeText(nc).catch(()=>{});
+    alert(`「${venue.name}」邀請碼：${nc}\n\n請給台主：在 App 選「我是台主」→ 機台 →「連結場地」輸入此代碼與機台編號。`);
+  }catch(e){ toast('產生邀請碼失敗：'+e.code, 5000); }
+};
+function renderClaims(){
+  const box = $('claimsBox'); if(!claims.length){ box.innerHTML=''; return; }
+  const free = machines().filter(m=>!links[m.id]);
+  box.innerHTML = `<div class="card"><b>台主連結申請（${claims.length}）</b>` + claims.map(c=>{
+    const guess = free.find(m=>m.no===c.machineNo);
+    return `<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px" data-c="${c.id}">
+      <div>${esc(c.tenantName||'')} <span class="muted">${esc(c.tenantEmail||'')}</span></div>
+      <div class="muted">台主機台：${esc(c.tenantMachineName||'')}・申請編號：${esc(c.machineNo||'')}</div>
+      <div class="row" style="margin-top:6px;flex-wrap:nowrap"><select>${free.map(m=>`<option value="${m.id}" ${guess&&guess.id===m.id?'selected':''}>機台 ${esc(m.no)}${priv[m.id]?.owner?'（'+esc(priv[m.id].owner)+'）':''}</option>`).join('')}</select>
+      <button class="pri" data-a="ok" style="flex:none">核准</button><button data-a="no" style="flex:none">拒絕</button></div></div>`; }).join('') + '</div>';
+  box.querySelectorAll('[data-c]').forEach(row=>{
+    const c = claims.find(x=>x.id===row.dataset.c);
+    row.querySelector('[data-a=ok]').onclick = ()=> approve(c, row.querySelector('select').value);
+    row.querySelector('[data-a=no]').onclick = async ()=>{ await F.updateDoc(D('venues',V,'claims',c.id), {status:'rejected', decidedAt:ts()}).catch(e=>toast(e.code)); };
+  });
+}
+async function approve(c, oid){
+  if(!oid){ toast('沒有可連結的機台'); return; }
+  const o = objs[oid], p = priv[oid] || {};
+  const b = F.writeBatch(db);
+  b.set(D('venues',V,'links',oid), {tenantUid:c.tenantUid, tenantMachineId:c.tenantMachineId||'', tenantName:c.tenantName||'', tenantEmail:c.tenantEmail||'', venueId:V, venueName:venue.name, objectId:oid, no:o.no, rent:p.selfManaged?'':(p.rent||''), rentPaid:p.rentPaid||{}, linkedAt:ts()});
+  b.set(D('venues',V,'members',c.tenantUid), {since:ts()});
+  b.update(D('venues',V,'claims',c.id), {status:'approved', objectId:oid, decidedAt:ts()});
+  if(!p.owner && c.tenantName) b.set(D('venues',V,'private',oid), {owner:c.tenantName}, {merge:true});
+  await b.commit().then(()=>toast(`已連結到機台 ${o.no}`)).catch(e=>toast('核准失敗：'+e.code, 5000));
+}
+async function unlink(oid){
+  const ln = links[oid]; if(!ln || !confirm('解除與台主帳號的連結？台主將看不到此場地。')) return;
+  const b = F.writeBatch(db); b.delete(D('venues',V,'links',oid));
+  if(!Object.entries(links).some(([k,l])=>k!==oid && l.tenantUid===ln.tenantUid)) b.delete(D('venues',V,'members',ln.tenantUid));
+  await b.commit().then(()=>toast('已解除連結')).catch(e=>toast(e.code));
+}
+
+/* ---------- 匯出／匯入 ---------- */
+$('btnExport').onclick = ()=>{
+  openMenu(false); if(!venue) return;
+  const data = {format:'claw-floorplan-v2', exportedAt:new Date().toISOString(), venue:{name:venue.name, widthM:venue.widthM, lengthM:venue.lengthM, floor:venue.floor||'dark'}, objects:objs, private:priv, shopExpenses:shop};
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:'application/json'}));
+  a.download = `${venue.name}-${new Date().toISOString().slice(0,10)}.json`; a.click();
+};
+$('btnImport').onclick = ()=>{ openMenu(false); if(venue) $('fileIn').click(); };
+$('fileIn').onchange = async e=>{
+  const file = e.target.files[0]; e.target.value=''; if(!file) return;
+  try{
+    const d = JSON.parse(await file.text());
+    if(d.format!=='claw-floorplan-v2' || typeof d.objects!=='object') throw new Error('不是 v2 匯出檔');
+    if(!confirm(`用檔案內容取代「${venue.name}」的平面圖與機台資料（${Object.keys(d.objects).length} 個物件）？`)) return;
+    const ops = [];
+    for(const id of Object.keys(objs)) if(!d.objects[id]){ ops.push(b=>b.delete(D('venues',V,'objects',id))); ops.push(b=>b.delete(D('venues',V,'private',id))); }
+    for(const [id,o] of Object.entries(d.objects)) ops.push(b=>b.set(D('venues',V,'objects',id), o));
+    for(const [id,p] of Object.entries(d.private||{})) ops.push(b=>b.set(D('venues',V,'private',id), p));
+    ops.push(b=>b.set(D('venues',V,'finance','shop'), {shopExpenses:d.shopExpenses||{}}));
+    if(d.venue) ops.push(b=>b.update(D('venues',V), {widthM:d.venue.widthM, lengthM:d.venue.lengthM, floor:d.venue.floor||'dark'}));
+    await commitChunks(ops); toast('匯入完成');
+  }catch(err){ toast('匯入失敗：'+(err.code||err.message), 5000); }
+};
+
+/* ============================== 舊版資料遷移（只限舊版場主帳號）============================== */
+// 舊版座標：寬 400 單位；機台邊長 S（場地一 74、場地二 62）→ 換算成 0.8 m（「中」）
+function legacyMain(){
+  const W=400,S=74,BIG=104,GAP=5,L=[]; const col=(x,y0,n,s=S)=>{ for(let i=0;i<n;i++) L.push({type:'machine',x,y:y0+i*(s+GAP),w:s,h:s}); return y0+n*(s+GAP); };
+  const LX=18,CX=(W-S)/2,RX=W-18-S; let y=col(LX,92,8); L.push({type:'exchanger',x:LX-8,y:y+3,w:S+16,h:56}); col(LX,y+67,5);
+  { const left=L.filter(l=>l.type==='machine'); const top=150,bottom=left[11].y+S,pairH=2*S+GAP,gap=(bottom-top-4*pairH)/3; for(let k=0;k<4;k++) col(CX,top+k*(pairH+gap),2); }
+  y=col(RX,122,7); L.push({type:'exchanger',x:RX-8,y:y+3,w:S+16,h:56}); const s39={x:RX,y:y+67}; y=col(RX,y+67+S+GAP,5); col(W-12-BIG,y+3,2,BIG);
+  { const x0=(W-(3*S+2*GAP))/2; for(let i=0;i<3;i++) L.push({type:'machine',x:x0+i*(S+GAP),y:6,w:S,h:S}); }
+  { const ms=L.filter(l=>l.type==='machine'), ll=ms[12]; L.push({type:'machine',x:s39.x,y:s39.y,w:S,h:S,no:'28'}); L.push({type:'machine',x:ll.x,y:ll.y+S+GAP,w:S,h:S,no:'2'}); }
+  return {L,W,S,H:Math.max(...L.map(l=>l.y+l.h))+6,floor:'dark'};
+}
+function legacyVenue2(){
+  const W=400,S=62,G=3,L=[]; const m=(no,x,y)=>L.push({type:'machine',x,y,w:S,h:S,no:String(no)});
+  L.push({type:'indoor',x:135,y:0,w:265,h:447,label:'室內'});
+  L.push({type:'stairs',x:255,y:0,w:145,h:52,label:'樓梯'}); L.push({type:'stairs',x:345,y:52,w:55,h:123,label:'樓梯'});
+  L.push({type:'outdoor',x:4,y:430,w:40,h:110,label:'室外'});
+  m(14,5,4); m(13,5+S+G,4);
+  L.push({type:'counter',x:135,y:7,w:56,h:56,label:'電腦'}); L.push({type:'counter',x:194,y:7,w:56,h:56,label:'電腦'});
+  m(2,345-S-G,56); const CX=225; m(3,CX+13,180);
+  L.push({type:'exchanger',x:CX+13+S+G,y:186,w:50,h:50,label:'兌幣機'});
+  m(4,CX,245); m(6,CX+S+G,245); m(5,CX,310); m(7,CX+S+G,310); m(8,CX+20,375);
+  const AX=70,BX=AX+S+G; [16,17,18,19].forEach((n,k)=>m(n,AX,180+k*(S+G))); [9,10,11,12].forEach((n,k)=>m(n,BX,185+k*(S+G)));
+  m(20,AX,520); m(23,BX,520); m(21,AX,585); m(22,BX,585); [24,25,26].forEach((n,k)=>m(n,W-S,455+k*(S+G)));
+  return {L,W,S,H:Math.max(...L.map(l=>l.y+l.h))+6,floor:'outdoor'};
+}
+function cleanRP(rp){ const o={}; if(rp&&typeof rp==='object') for(const [y,ms] of Object.entries(rp)){ if(!/^\d{4}$/.test(y)||!ms||typeof ms!=='object') continue; o[y]={}; for(let k=1;k<=12;k++) o[y][k]=!!ms[k]; } return o; }
+function cleanMM(mp){ const o={}; if(mp&&typeof mp==='object') for(const [y,ms] of Object.entries(mp)){ if(!/^\d{4}$/.test(y)||!ms||typeof ms!=='object') continue; o[y]={}; for(let k=1;k<=12;k++) o[y][k]=ms[k]==null?'':String(ms[k]).trim(); } return o; }
+function convertLegacy(build, d){
+  const B = build(), k = 0.8 / B.S, ov = (d && d.layoutOv) || {}, md = (d && d.machines) || {};
+  const base = B.L.filter(l=>l.type==='machine'), statics = B.L.filter(l=>l.type!=='machine');
+  const n = Math.max(base.length, ...Object.keys(ov).filter(x=>/^\d+$/.test(x)).map(x=>+x+1));
+  const objects = {}, privs = {}; let maxY = B.H;
+  for(let i=0;i<n;i++){
+    const b = base[i], o = ov[String(i)];
+    let sl = b ? {...b} : (o && o.added ? {x:0,y:0,w:B.S,h:B.S} : null);
+    if(!sl) continue; if(o){ for(const f of ['x','y','w','h']) if(Number.isFinite(+o[f]) && o[f]!=null && o[f]!=='') sl[f]=+o[f]; if(o.deleted) continue; if(typeof o.no==='string') sl.no=o.no; }
+    maxY = Math.max(maxY, sl.y+sl.h+6);
+    const m = md[String(i)] || md[i] || {};
+    let status = String(m.status||'營運中'); if(status==='閒置') status='待承租';
+    const w = r2(sl.w*k), size = Object.entries(SIZES).find(([,v])=>Math.abs(v-w)<0.02)?.[0] || '';
+    objects['m'+i] = {type:'machine', x:r2(sl.x*k), y:r2(sl.y*k), w, h:r2(sl.h*k), size, no:String(m.no ?? sl.no ?? (i+1)), status, legacyIndex:i};
+    const p = {owner:String(m.owner??''), rent:String(m.rent??''), selfManaged:m.selfManaged===true, notes:'', rentPaid:cleanRP(m.rentPaid), revenueByMonth:cleanMM(m.revenueByMonth), costByMonth:cleanMM(m.costByMonth)};
+    for(const [old,key] of [['revenue','revenueByMonth'],['cost','costByMonth']]){ const v = m[old]==null?'':String(m[old]).trim(); if(v!=='' && !Object.keys(p[key]).length){ p[key][CUR_Y]={}; for(let q=1;q<=12;q++) p[key][CUR_Y][q]=''; p[key][CUR_Y][CUR_M]=v; } }
+    if(m.paid==='已繳' && !Object.keys(p.rentPaid).length){ p.rentPaid[CUR_Y]={}; for(let q=1;q<=12;q++) p.rentPaid[CUR_Y][q]=false; p.rentPaid[CUR_Y][CUR_M]=true; }
+    privs['m'+i] = p;
+  }
+  statics.forEach((s,j)=> objects['s'+j] = {type:s.type, x:r2(s.x*k), y:r2(s.y*k), w:r2(s.w*k), h:r2(s.h*k), label:s.label ?? TYPES[s.type].label});
+  return {objects, privs, widthM:r2(B.W*k), lengthM:r2(maxY*k), floor:B.floor};
+}
+$('btnMigrate').onclick = async ()=>{
+  openMenu(false); if(!isLegacyOwner()) return;
+  try{
+    const [mainS, v2S, metaS] = await Promise.all(['main','venue2','_meta'].map(id=>F.getDoc(D('floorplans',id))));
+    const names = (metaS.exists() && metaS.data().names) || {};
+    const plan = [ {key:'main', build:legacyMain, snap:mainS, name:names.main||'來都來了'}, {key:'venue2', build:legacyVenue2, snap:v2S, name:names.venue2||'大寮貓抓'} ];
+    const summary = plan.map(p=>`${p.name}：${p.snap.exists() ? Object.keys(p.snap.data().machines||{}).length+' 台資料' : '（無資料，將用預設佈局）'}`).join('\n');
+    const ids = plan.map(p=>`${U.uid}-legacy-${p.key}`);
+    const exist = (await Promise.all(ids.map(id=>F.getDoc(D('venues',id))))).filter(s=>s.exists()).length;
+    if(!confirm(`從舊版匯入：\n${summary}\n\n舊資料不會被修改（保留作為備份）。${exist?`\n⚠ 已匯入過 ${exist} 個場地，將會覆蓋新版中這些場地的內容。`:''}\n\n確定匯入？`)) return;
+    for(let i=0;i<plan.length;i++){
+      const p = plan[i], vid = ids[i], d = p.snap.exists() ? p.snap.data() : {};
+      const c = convertLegacy(p.build, d), ops = [];
+      ops.push(b=>b.set(D('venues',vid), {ownerUid:U.uid, name:p.name, widthM:c.widthM, lengthM:c.lengthM, floor:c.floor, migratedFrom:'floorplans/'+p.key, migratedAt:ts(), createdAt:ts()}, {merge:true}));
+      await commitChunks(ops);   // 先建立場地（後續子集合的規則需要讀到 ownerUid）
+      const ops2 = [];
+      const old = await F.getDocs(C('venues',vid,'objects')); old.docs.forEach(x=>{ if(!c.objects[x.id]) ops2.push(b=>b.delete(x.ref)); });
+      for(const [id,o] of Object.entries(c.objects)) ops2.push(b=>b.set(D('venues',vid,'objects',id), o));
+      for(const [id,pp] of Object.entries(c.privs)) ops2.push(b=>b.set(D('venues',vid,'private',id), pp));
+      ops2.push(b=>b.set(D('venues',vid,'finance','shop'), {shopExpenses:d.shopExpenses||{}}));
+      await commitChunks(ops2);
+    }
+    toast('✅ 舊版資料已匯入（舊資料保留未動）', 4000); V=null;
+  }catch(e){ toast('匯入失敗：'+(e.code||e.message), 6000); console.error(e); }
+};
+
+/* ============================== 台主 ============================== */
+let tms = {}, myLinks = [], claimStat = {};
+function startTenant(){
+  show('scrTenant'); $('title').textContent = '我的機台（台主）';
+  unsubs.push(F.onSnapshot(C('users',U.uid,'machines'), s=>{ tms = Object.fromEntries(s.docs.map(d=>[d.id,d.data()])); refreshClaims(); }, e=>toast('讀取失敗：'+e.code)));
+  unsubs.push(F.onSnapshot(F.query(F.collectionGroup(db,'links'), F.where('tenantUid','==',U.uid)), s=>{ myLinks = s.docs.map(d=>({id:d.id, venueId:d.ref.parent.parent.id, ...d.data()})); renderTenant(); }, e=>toast('讀取連結失敗：'+e.code)));
+}
+async function refreshClaims(){
+  await Promise.all(Object.values(tms).filter(m=>m.claim && m.claim.venueId).map(async m=>{
+    try{ const s = await F.getDoc(D('venues',m.claim.venueId,'claims',U.uid)); claimStat[m.claim.venueId] = s.exists() ? s.data() : null; }catch(e){ claimStat[m.claim.venueId] = null; }
+  }));
+  renderTenant();
+}
+function renderTenant(){
+  const ids = Object.keys(tms);
+  if(!ids.length){ $('tmList').innerHTML = '<div class="card muted" style="text-align:center">還沒有機台，按「＋ 新增我的機台」開始。<br>機台資料只有你自己看得到。</div>'; return; }
+  $('tmList').innerHTML = ids.map(id=>{ const m = tms[id];
+    const ln = myLinks.find(l=>l.tenantMachineId===id);
+    let linkHtml;
+    if(ln){
+      const y = String(viewY);
+      linkHtml = `<div style="margin-top:8px"><span class="badge ok">已連結</span> ${esc(ln.venueName||'')}・機台 ${esc(ln.no||'')}</div>
+        <div class="muted" style="margin:4px 0">月租金：${ln.rent ? money(num(ln.rent)) : '—'}・${y} 年繳費狀態（唯讀）</div>
+        <div class="chips">${[...Array(12)].map((_,k)=>`<div class="chip ro ${isPaid(ln,y,k+1)?'on':''}">${k+1}月</div>`).join('')}</div>
+        <button data-plan="${id}" style="margin-top:8px">查看在場地的位置</button>`;
+    } else {
+      const cs = m.claim && claimStat[m.claim.venueId];
+      linkHtml = cs && cs.status==='pending' && cs.tenantMachineId===id ? `<div style="margin-top:8px"><span class="badge wait">等待場主核准</span> <span class="muted">邀請碼 ${esc(cs.code)}・編號 ${esc(cs.machineNo)}</span></div>`
+        : (cs && cs.status==='rejected' && cs.tenantMachineId===id ? `<div style="margin-top:8px"><span class="badge">場主未核准</span> <button data-link="${id}">重新申請</button></div>` : `<div style="margin-top:8px"><span class="muted">未連結場地（私人）</span> <button data-link="${id}">用邀請碼連結場地</button></div>`);
+    }
+    return `<div class="card"><div class="tm"><div><b>${esc(m.name)}</b><div class="muted">📍 ${esc(m.location)}${m.type?'・'+esc(m.type):''}${m.size?'・'+esc(m.size):''}</div>${m.notes?`<div class="muted">${esc(m.notes)}</div>`:''}</div><button data-edit="${id}">編輯</button></div>${linkHtml}</div>`; }).join('');
+  $('tmList').querySelectorAll('[data-edit]').forEach(b=> b.onclick=()=> tmDialog(b.dataset.edit));
+  $('tmList').querySelectorAll('[data-link]').forEach(b=> b.onclick=()=> linkDialog(b.dataset.link));
+  $('tmList').querySelectorAll('[data-plan]').forEach(b=> b.onclick=()=> showPlan(myLinks.find(l=>l.tenantMachineId===b.dataset.plan)));
+}
+$('fTM').elements.size.innerHTML = '<option value="">—</option>' + Object.keys(SIZES).map(k=>`<option>${k}</option>`).join('');
+$('btnAddTM').onclick = ()=> tmDialog(null);
+function tmDialog(id){
+  const f = $('fTM'), m = id ? tms[id] : {};
+  for(const k of ['name','location','type','size','notes']) f.elements[k].value = m[k] || '';
+  $('tmDel').style.display = id ? '' : 'none';
+  $('dlgTM').returnValue=''; $('dlgTM').showModal();
+  $('dlgTM').onclose = async ()=>{
+    const rv = $('dlgTM').returnValue;
+    if(rv==='del'){ if(confirm('刪除這台機台？（已連結的場地資料不受影響，請另請場主解除連結）')) await F.deleteDoc(D('users',U.uid,'machines',id)).catch(e=>toast(e.code)); return; }
+    if(rv!=='ok') return;
+    const d = {}; for(const k of ['name','location','type','size','notes']) d[k] = f.elements[k].value.trim();
+    d.updatedAt = ts();
+    const ref = id ? D('users',U.uid,'machines',id) : F.doc(C('users',U.uid,'machines'));
+    await F.setDoc(ref, d, {merge:true}).then(()=>toast('已儲存')).catch(e=>toast('儲存失敗：'+e.code));
+  };
+}
+function linkDialog(id){
+  const f = $('fLink'); f.reset(); $('dlgLink').returnValue=''; $('dlgLink').showModal();
+  $('dlgLink').onclose = async ()=>{
+    if($('dlgLink').returnValue!=='ok') return;
+    const code = f.elements.code.value.trim().toUpperCase(), no = f.elements.machineNo.value.trim();
+    try{
+      const cs = await F.getDoc(D('inviteCodes', code));
+      if(!cs.exists()){ toast('邀請碼不正確或已失效'); return; }
+      const vid = cs.data().venueId, cref = D('venues',vid,'claims',U.uid);
+      const old = await F.getDoc(cref).catch(()=>null);
+      if(old && old.exists()) await F.deleteDoc(cref);
+      await F.setDoc(cref, {tenantUid:U.uid, status:'pending', code, machineNo:no, tenantMachineId:id, tenantMachineName:tms[id].name, tenantName:U.displayName||'', tenantEmail:U.email||'', createdAt:ts()});
+      await F.setDoc(D('users',U.uid,'machines',id), {claim:{venueId:vid, code, at:ts()}}, {merge:true});
+      toast('已送出申請，等待場主核准');
+    }catch(e){ toast('申請失敗：'+(e.code||e.message), 5000); }
+  };
+}
+async function showPlan(ln){
+  const box = $('tPlan'); box.style.display=''; box.innerHTML = '載入中…';
+  try{
+    const [vs, os] = await Promise.all([F.getDoc(D('venues',ln.venueId)), F.getDocs(C('venues',ln.venueId,'objects'))]);
+    const v = vs.data(), list = os.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>isArea(b.type)-isArea(a.type));
+    box.innerHTML = `<div class="tm"><b>${esc(v.name)}・我的機台 ${esc(ln.no||'')}</b><button id="tpClose">關閉</button></div><div class="muted">黃色＝你的機台；灰色＝其他機台（不顯示他人資料）</div><div class="floor" id="tFloor" style="margin-top:8px"></div>`;
+    renderFloor($('tFloor'), v, list, {mode:'tenant', mineId:ln.objectId});
+    $('tpClose').onclick = ()=> box.style.display='none';
+    box.scrollIntoView({behavior:'smooth'});
+  }catch(e){ box.innerHTML = '無法載入平面圖：' + esc(e.code||e.message); }
+}
+window.__app = {get state(){ return {U:U&&{uid:U.uid,email:U.email}, ROLE, V, objs, priv, links, claims, tms, myLinks}; }};
+</script>
+</body>
+</html>
