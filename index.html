@@ -48,6 +48,23 @@
   .area{pointer-events:none;border-radius:0;z-index:0;font-weight:800;line-height:1}
   .blocklbl{cursor:default;z-index:1;font-weight:800;border-radius:0.6cqw}
   .machine,.exchanger{z-index:2}
+  .floor.editing{background-image:linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px);
+    background-size:5cqw 5cqw}
+  .layout-edit .machine{touch-action:none;cursor:grab;outline:2px dashed #60a5fa;outline-offset:-2px}
+  .layout-edit .machine.dragging{cursor:grabbing;z-index:5;box-shadow:0 6px 16px rgba(0,0,0,.5);opacity:.92}
+  .layout-edit .machine.bad{outline:3px solid #ef4444}
+  .machine .tools{position:absolute;top:0.4cqw;right:0.4cqw;display:flex;gap:0.6cqw}
+  .machine .tools button{font-size:3cqw;line-height:1;padding:0.6cqw 1cqw;border-radius:1cqw;background:#1f2937;color:#fff;border:none;min-width:6cqw}
+  .machine .tools button[data-act=del]{background:#dc2626}
+  .layout-edit .machine .top{margin-top:3cqw}
+  .machine.flash{animation:flash 1.2s 2}
+  @keyframes flash{50%{box-shadow:0 0 0 1.2cqw #facc15}}
+  .edit-bar{position:fixed;left:0;right:0;bottom:0;z-index:30;display:none;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;
+    padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:rgba(17,24,39,.97);border-top:1px solid var(--line)}
+  .edit-bar.show{display:flex}
+  .edit-bar .hint{margin-right:auto;font-size:12px;color:var(--muted)}
+  .edit-bar button{font-size:15px;padding:9px 14px}
+  body.layout-edit main{padding-bottom:90px}
   .menu-btn{font-size:20px;line-height:1;padding:4px 10px;margin-right:6px}
   .drawer-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:35;display:none}
   .drawer-bg.open{display:block}
@@ -123,6 +140,7 @@
     <h1 style="display:flex;align-items:center"><button class="menu-btn" id="btnMenu" aria-label="切換場地">☰</button><span id="venueTitle">🧸 娃娃機台平面圖</span></h1>
     <div class="actions">
       <button id="btnSaveAll" class="primary" title="把所有機台資料重新寫入雲端（合併，不會刪資料）">全部儲存</button>
+      <button id="btnLayout" title="新增、移動、刪除機台">編輯佈局</button>
       <button id="btnExport">匯出 JSON</button>
       <label class="btn" style="flex-direction:row;color:var(--text)">匯入 JSON
         <input type="file" id="fileImport" accept="application/json,.json" hidden></label>
@@ -150,7 +168,7 @@
   <div class="banner" id="banner">⚠️ 尚未設定雲端（firebaseConfig），目前為「僅本機」模式，資料只存在這台裝置。</div>
 </header>
 <main><div class="floor" id="floor"></div>
-  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10k・共 <span id="verN"></span> 台</div></main>
+  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10l・共 <span id="verN"></span> 台</div></main>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal" role="dialog" aria-modal="true">
@@ -186,11 +204,18 @@
 </div>
 <div class="toast" id="toast"></div>
 
+<div class="edit-bar" id="editBar">
+  <span class="hint">編輯佈局：拖曳移動・⤢ 大小・✕ 刪除</span>
+  <button id="btnAddMachine">＋新增機台</button>
+  <button id="btnLayoutDone" class="primary">完成</button>
+</div>
+
 <div class="drawer-bg" id="drawerBg"></div>
 <nav class="drawer" id="drawer" aria-label="場地選單">
   <div style="display:flex;align-items:center;justify-content:space-between"><b style="font-size:17px">🧸 場地</b><button id="btnMenuClose">✕</button></div>
   <h3>點選切換場地；「改名」可修改名稱（存到雲端）</h3>
   <div id="venueList" style="display:flex;flex-direction:column;gap:8px"></div>
+  <button id="btnMenuLayout" style="margin-top:6px;padding:10px">🛠️ 編輯此場地的佈局</button>
 </nav>
 
 <div class="login-bg" id="loginBg">
@@ -239,7 +264,46 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
   const VENUE = VENUES.find(v=>v.id===localStorage.getItem(VENUE_KEY)) || VENUES[0];
   let venueNames = {}; try{ venueNames = JSON.parse(localStorage.getItem(NAMES_KEY))||{}; }catch(e){}
   const venueName = v => (venueNames[v.id] || v.defaultName);
-  const {layout, W, H, floorBg} = VENUE.build();
+  const BUILT = VENUE.build();
+  const {W, floorBg} = BUILT, S0 = BUILT.S, BIG0 = BUILT.BIG, baseH = BUILT.H;
+  const statics = BUILT.layout.filter(l=>l.type!=='machine');       // 兌幣機、區域、電腦、樓梯…（不可編輯）
+  const baseSlots = BUILT.layout.filter(l=>l.type==='machine');     // 預設機台位置
+  // 自訂佈局（存在雲端 layoutOv）：{ "<內部位置>": {x,y,w,h, no?, added?, deleted?} }；沒有的就用預設位置
+  let layoutOv = {};
+  let machineSlots = [], N = 0, H = baseH, layoutEditing = false;
+  function cleanLayoutOv(o){
+    const out = {};
+    if(o && typeof o==='object') for(const [k,v] of Object.entries(o)){
+      if(!/^\d+$/.test(k) || !v || typeof v!=='object') continue;
+      const r = {};
+      for(const f of ['x','y','w','h']) if(Number.isFinite(+v[f]) && v[f]!=='' && v[f]!=null) r[f] = Math.round(+v[f]*10)/10;
+      if(typeof v.no==='string') r.no = v.no;
+      if(v.added===true) r.added = true;
+      if(v.deleted===true) r.deleted = true;
+      out[k] = r;
+    }
+    return out;
+  }
+  function computeSlots(){
+    const L = Math.max(baseSlots.length, ...Object.keys(layoutOv).map(k=>+k+1));
+    machineSlots = [];
+    for(let i=0;i<L;i++){
+      const b = baseSlots[i], o = layoutOv[String(i)];
+      let sl;
+      if(b) sl = {...b};
+      else if(o && o.added) sl = {type:'machine', x:0, y:0, w:S0, h:S0};
+      else sl = {type:'machine', x:0, y:0, w:S0, h:S0, deleted:true};
+      if(o){ for(const f of ['x','y','w','h','no']) if(o[f]!=null) sl[f] = o[f]; if(o.deleted) sl.deleted = true; }
+      sl.big = sl.w > S0 + 1;
+      machineSlots.push(sl);
+    }
+    const live = machineSlots.filter(x=>!x.deleted);
+    N = live.length;
+    H = Math.max(baseH, ...live.map(x=>x.y+x.h+6)) + (layoutEditing ? S0 + 20 : 0);
+  }
+  computeSlots();
+  const isLive = i => machineSlots[i] && !machineSlots[i].deleted;
+  const act = () => machines.filter((_,i)=>isLive(i));
 
   // ---- 場地一「來都來了」：座標系寬 400（所有機台皆為正方形）----
   function buildLayoutMain(){
@@ -280,7 +344,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
 
     // 新增機台的預設顯示編號（可重複，可在後台修改）
     const ms = layout.filter(l=>l.type==='machine'); ms[38].no = '28'; ms[39].no = '2';
-    return {layout, W, H, floorBg:'#0b0d10'};
+    return {layout, W, H, S, BIG, floorBg:'#0b0d10'};
   }
 
   // ---- 場地二「大寮貓抓」：依照配置圖（藍＝室外、綠＝室內）----
@@ -306,7 +370,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     const m = (no,x,y) => layout.push({type:'machine', x,y,w:S,h:S, no:String(no)});
     // 背景區域
     area(135, 0, 265, 447, IN, {border:'#d1d5db'});                                // 室內（黑底＋淺色邊線）
-    area(255, 0, 145, 175, 'transparent', {html:STAIRS, title:'樓梯'});            // 樓梯（L 形）
+    area(255, 0, 145, 175, 'transparent', {html:STAIRS, title:'樓梯', obstacle:true});            // 樓梯（L 形）
     area(185, 112, 70, 34, 'transparent', {label:'室內', color:'#fff', fs:4.5});
     area(4, 430, 40, 110, 'transparent', {label:'室<br>外', color:'#111', fs:7});
     // 上方：14、13、電腦
@@ -332,11 +396,9 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     // 右側室外：24、25、26
     [24,25,26].forEach((n,k)=> m(n, W-S, 455+k*(S+G)));
     const H = Math.max(...layout.map(l=>l.y+l.h)) + 6;
-    return {layout, W, H, floorBg:OUT};
+    return {layout, W, H, S, BIG:86, floorBg:OUT};
   }
 
-  const machineSlots = layout.filter(l => l.type==='machine');
-  const N = machineSlots.length;
   const DEF = i => ({no:machineSlots[i].no ?? String(i+1), status:'營運中', owner:'', rent:'', selfManaged:false, rentPaid:{}, revenueByMonth:{}, costByMonth:{}});
   const FIELDS = ['no','status','owner','rent'];
   // revenueByMonth / costByMonth 結構：{ "2026": { "1":"5600", ..., "12":"" } }（金額以字串存，空字串＝未填）
@@ -402,18 +464,20 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
   }
   const toMap = arr => Object.fromEntries(arr.map((m,i)=>[String(i), m]));
   function readStore(key){
-    try{ const d = JSON.parse(localStorage.getItem(key)); if(d && d.machines){ if(d.shopExpenses) shopExpenses = cleanExpenses(d.shopExpenses); return normalize(d.machines); } }catch(e){}
+    try{ const d = JSON.parse(localStorage.getItem(key)); if(d && d.machines){
+      if(d.shopExpenses) shopExpenses = cleanExpenses(d.shopExpenses);
+      if(d.layoutOv){ layoutOv = cleanLayoutOv(d.layoutOv); computeSlots(); }
+      return normalize(d.machines); } }catch(e){}
     return null;
   }
   function writeCache(){
-    localStorage.setItem(CLOUD ? VENUE.cacheKey : VENUE.localKey, JSON.stringify({version:4, savedAt:new Date().toISOString(), machines, shopExpenses}));
+    localStorage.setItem(CLOUD ? VENUE.cacheKey : VENUE.localKey, JSON.stringify({version:5, savedAt:new Date().toISOString(), machines, shopExpenses, layoutOv}));
   }
 
   let machines = (CLOUD ? readStore(VENUE.cacheKey) : readStore(VENUE.localKey)) || defaults();
 
   const $ = id => document.getElementById(id);
   const floor = $('floor');
-  floor.style.aspectRatio = `${W} / ${H}`;
   floor.style.background = floorBg;
   floor.classList.toggle('compact', VENUE.id==='venue2');
   if(VENUE.id!=='main'){ floor.style.borderRadius = '4px'; floor.style.border = '2px solid #9ca3af'; }
@@ -423,8 +487,10 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
 
   function render(){
     floor.innerHTML = '';
-    let mi = 0;
-    layout.forEach(l=>{
+    floor.style.aspectRatio = `${W} / ${H}`;
+    floor.classList.toggle('editing', layoutEditing);
+    const items = [...statics.map(l=>({l, idx:-1})), ...machineSlots.map((l,i)=>({l, idx:i})).filter(x=>!x.l.deleted)];
+    items.forEach(({l, idx})=>{
       const el = document.createElement('div');
       el.className = 'item ' + l.type;
       Object.assign(el.style, {left:pct(l.x,W), top:pct(l.y,H), width:pct(l.w,W), height:pct(l.h,H)});
@@ -440,7 +506,8 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
       }
       else if(l.type==='exchanger'){ if(l.html){ el.innerHTML = l.html; el.style.lineHeight = '1.15'; } else el.textContent='兌幣機'; el.title='兌幣機'; if(l.fs) el.style.fontSize = l.fs + 'cqw'; }
       else{
-        const idx = mi++, m = machines[idx];
+        const m = machines[idx];
+        el.dataset.idx = idx;
         if(l.big) el.classList.add('big');
         if(m.status==='維修中') el.classList.add('st-repair');
         if(m.status==='待承租') el.classList.add('st-vacant');
@@ -450,15 +517,22 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
           <div class="owner">${m.owner ? esc(m.owner) : '<span style="color:#999">未設定</span>'}</div>`;
         el.title = `${m.no} 號機｜${m.status}｜${self?'自己管理':`${viewY}年${viewM}月 ${paid?'已繳':'未繳'}`}`;
         el.tabIndex = 0;
-        el.addEventListener('click', ()=>openEditor(idx));
-        el.addEventListener('keydown', e=>{ if(e.key==='Enter') openEditor(idx); });
+        el.addEventListener('click', ()=>{ if(!layoutEditing) openEditor(idx); });
+        el.addEventListener('keydown', e=>{ if(e.key==='Enter' && !layoutEditing) openEditor(idx); });
+        if(layoutEditing){
+          el.insertAdjacentHTML('beforeend', `<div class="tools"><button data-act="size" title="切換大小">⤢</button><button data-act="del" title="刪除機台">✕</button></div>`);
+          el.addEventListener('pointerdown', e=> startDrag(e, idx, el));
+          el.querySelector('[data-act=del]').addEventListener('click', e=>{ e.stopPropagation(); deleteMachine(idx); });
+          el.querySelector('[data-act=size]').addEventListener('click', e=>{ e.stopPropagation(); toggleSize(idx); });
+        }
       }
       floor.appendChild(el);
     });
     renderSummary();
+    if($('verN')) $('verN').textContent = N;
   }
   function monthTotals(y, mo){
-    const rented = machines.filter(m=>!m.selfManaged), self = machines.filter(m=>m.selfManaged);
+    const rented = act().filter(m=>!m.selfManaged), self = act().filter(m=>m.selfManaged);
     const rentIn = rented.filter(m=>isPaid(m,y,mo)).reduce((a,m)=>a+num(m.rent),0);   // 已收台主租金
     const sumMon = (list,key) => list.reduce((a,m)=>a+num(getMon(m[key],y,mo)),0);
     const selfRev = sumMon(self,'revenueByMonth'), selfCost = sumMon(self,'costByMonth');      // 自管：計入
@@ -468,7 +542,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     return {rentIn, selfRev, selfCost, rev, cost, shopRent, elec, net: rentIn + selfRev - selfCost - shopRent - elec};   // 出租機台的營收屬於台主，不計入
   }
   function renderSummary(){
-    const rented = machines.filter(m=>!m.selfManaged), nSelf = N - rented.length;
+    const rented = act().filter(m=>!m.selfManaged), nSelf = N - rented.length;
     const paid = rented.filter(m=>isPaid(m,viewY,viewM)).length;
     const due = rented.filter(m=>!isPaid(m,viewY,viewM)).reduce((a,m)=>a+num(m.rent),0);
     const arrears = rented.reduce((a,m)=>{ let n=0; for(let k=1;k<=viewM;k++) if(!isPaid(m,viewY,k)) n++; return a + num(m.rent)*n; },0);
@@ -551,7 +625,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     setSync('busy','儲存中…');
     try{
       const map = Object.fromEntries(machines.map((m,i)=>[String(i), withOldFieldsRemoved(m)]));
-      await cloud.setDoc(cloud.ref, {machines: map, shopExpenses, updatedAt:cloud.serverTimestamp(), updatedBy:cloud.user.email}, {merge:true});
+      await cloud.setDoc(cloud.ref, {machines: map, shopExpenses, layoutOv, updatedAt:cloud.serverTimestamp(), updatedBy:cloud.user.email}, {merge:true});
       if(!silent) toast(`✓ 全部儲存成功（${N} 台）`);
     }catch(err){ cloudError(err, '全部儲存失敗'); if(!silent) alert('全部儲存失敗：' + (err.code||err.message)); }
     finally{ btn.disabled = false; btn.textContent = '全部儲存'; }
@@ -562,7 +636,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     if(!cloud) return;
     setSync('busy','儲存中…');
     try{
-      await cloud.setDoc(cloud.ref, {machines: toMap(machines), shopExpenses, updatedAt:cloud.serverTimestamp(), updatedBy:cloud.user.email});
+      await cloud.setDoc(cloud.ref, {machines: toMap(machines), shopExpenses, layoutOv, updatedAt:cloud.serverTimestamp(), updatedBy:cloud.user.email});
     }catch(err){ cloudError(err, '儲存失敗'); }
   }
   function cloudError(err, prefix){
@@ -645,7 +719,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     if(editing<0) return;
     const no = form.elements.no.value.trim();
     if(!no){ form.elements.no.focus(); toast('請輸入編號'); return; }
-    const dup = machines.findIndex((m,i)=>i!==editing && m.no===no);
+    const dup = machines.findIndex((m,i)=>i!==editing && isLive(i) && m.no===no);
     if(dup>=0 && !confirm(`編號「${no}」已被其他機台使用，仍要儲存嗎？`)) return;
     const idx = editing, m = machines[idx];
     ['status','owner','rent'].forEach(k=> m[k] = form.elements[k].value.trim());
@@ -663,7 +737,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
 
   // ---- 匯出 / 匯入 / 重設 ----
   $('btnExport').onclick = ()=>{
-    const data = JSON.stringify({version:4, venue:VENUE.id, venueName:venueName(VENUE), exportedAt:new Date().toISOString(), machines, shopExpenses}, null, 2);
+    const data = JSON.stringify({version:4, venue:VENUE.id, venueName:venueName(VENUE), exportedAt:new Date().toISOString(), machines, shopExpenses, layoutOv}, null, 2);
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([data], {type:'application/json'}));
     const d = new Date(), p = n=>String(n).padStart(2,'0');
@@ -682,6 +756,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
         if(!src || typeof src!=='object') throw new Error('格式錯誤');
         const n = Array.isArray(src) ? src.length : Object.keys(src).length;
         if(!confirm(`將以檔案內 ${n} 筆資料覆蓋目前${cloud?'雲端':''}資料，確定嗎？`)) return;
+        if(!Array.isArray(d) && d.layoutOv){ layoutOv = cleanLayoutOv(d.layoutOv); computeSlots(); }   // 檔案有自訂佈局才套用
         machines = normalize(src);
         if(!Array.isArray(d) && d.shopExpenses) shopExpenses = cleanExpenses(d.shopExpenses);   // 檔案沒有店面支出時保留目前的
         render(); persistAll(); toast('匯入完成');
@@ -696,6 +771,100 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
   };
 
   let tt; function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('show'),2200); }
+
+  // ---- 編輯佈局：新增／拖曳移動／刪除／改大小 ----
+  const GRID = 5;   // 對齊格線（平面圖單位）
+  const snapTo = v => Math.round(v/GRID)*GRID;
+  const rectOf = l => ({x:l.x, y:l.y, w:l.w, h:l.h});
+  const hit = (a,b) => a.x < b.x+b.w-0.5 && b.x < a.x+a.w-0.5 && a.y < b.y+b.h-0.5 && b.y < a.y+a.h-0.5;
+  function overlapsAny(r, skipIdx){
+    for(const l of statics) if((l.type==='exchanger' || l.type==='block' || l.obstacle) && hit(r, l)) return true;
+    return machineSlots.some((l,i)=> i!==skipIdx && !l.deleted && hit(r, l));
+  }
+  async function persistLayout(idx, extra={}){
+    writeCache();
+    if(!cloud) return;
+    setSync('busy','儲存中…');
+    try{ await cloud.setDoc(cloud.ref, {layoutOv:{[String(idx)]: layoutOv[String(idx)]}, ...extra, updatedAt:cloud.serverTimestamp(), updatedBy:cloud.user.email}, {merge:true}); }
+    catch(err){ cloudError(err, '佈局儲存失敗'); }
+  }
+  function setSlot(idx, patch){
+    const k = String(idx), sl = machineSlots[idx];
+    layoutOv[k] = {...(layoutOv[k]||{}), x:sl.x, y:sl.y, w:sl.w, h:sl.h, ...patch};
+    computeSlots();
+  }
+  let drag = null;
+  function startDrag(e, idx, el){
+    if(!layoutEditing || e.target.closest('.tools') || e.button>0) return;
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    const sl = machineSlots[idx], u = W / floor.getBoundingClientRect().width;
+    drag = {idx, el, sx:e.clientX, sy:e.clientY, ox:sl.x, oy:sl.y, w:sl.w, h:sl.h, u, x:sl.x, y:sl.y, moved:false};
+    el.classList.add('dragging');
+  }
+  floor.addEventListener('pointermove', e=>{
+    if(!drag) return;
+    const dx = (e.clientX-drag.sx)*drag.u, dy = (e.clientY-drag.sy)*drag.u;
+    if(Math.abs(dx)+Math.abs(dy) > 2) drag.moved = true;
+    drag.x = Math.min(Math.max(0, snapTo(drag.ox+dx)), W-drag.w);
+    drag.y = Math.min(Math.max(0, snapTo(drag.oy+dy)), H-drag.h);
+    drag.el.style.left = pct(drag.x,W); drag.el.style.top = pct(drag.y,H);
+    drag.el.classList.toggle('bad', overlapsAny({x:drag.x, y:drag.y, w:drag.w, h:drag.h}, drag.idx));
+  });
+  function endDrag(){
+    if(!drag) return;
+    const d = drag; drag = null;
+    if(!d.moved){ render(); return; }
+    if(overlapsAny({x:d.x, y:d.y, w:d.w, h:d.h}, d.idx)){ toast('位置和其他物件重疊，已還原'); render(); return; }
+    setSlot(d.idx, {x:d.x, y:d.y}); render(); persistLayout(d.idx);
+  }
+  floor.addEventListener('pointerup', endDrag);
+  floor.addEventListener('pointercancel', ()=>{ drag = null; render(); });
+  function findFreeSpot(w, h){
+    for(let y=0; y<=H-h; y+=GRID) for(let x=0; x<=W-w; x+=GRID){ const r={x,y,w,h}; if(!overlapsAny(r, -1)) return r; }
+    return {x:0, y:Math.max(...machineSlots.filter(l=>!l.deleted).map(l=>l.y+l.h), baseH) + GRID, w, h};
+  }
+  function addMachine(){
+    const idx = machineSlots.length;
+    const nums = act().map(m=>parseInt(m.no,10)).filter(Number.isFinite);
+    const no = String((nums.length ? Math.max(...nums) : 0) + 1);
+    const r = findFreeSpot(S0, S0);
+    layoutOv[String(idx)] = {added:true, ...r, no};
+    computeSlots();
+    machines.push(DEF(idx));
+    render(); persistLayout(idx);
+    const el = floor.querySelector(`[data-idx="${idx}"]`);
+    if(el){ el.classList.add('flash'); el.scrollIntoView({block:'center', behavior:'smooth'}); }
+    toast(`已新增機台（編號 ${no}），拖曳到想要的位置`);
+  }
+  function deleteMachine(idx){
+    const m = machines[idx];
+    if(!confirm(`確定要刪除「${m.no}」號機台嗎？\n這台機台的所有資料（台主、租金、每月繳費、營收／成本）都會一併清除，無法復原。`)) return;
+    setSlot(idx, {deleted:true});
+    machines[idx] = DEF(idx);
+    render();
+    persistLayout(idx, cloud ? {machines:{[String(idx)]: cloud.deleteField()}} : {});
+    toast(`已刪除「${m.no}」號機台`);
+  }
+  function toggleSize(idx){
+    const sl = machineSlots[idx], size = sl.big ? S0 : BIG0;
+    const r = {x:Math.min(sl.x, W-size), y:sl.y, w:size, h:size};
+    if(r.y + size > H){ toast('下方空間不夠'); return; }
+    if(overlapsAny(r, idx)){ toast('旁邊空間不夠，請先移開附近的機台'); return; }
+    setSlot(idx, r); render(); persistLayout(idx);
+  }
+  function setLayoutEditing(on){
+    layoutEditing = on;
+    if(on && editing>=0) closeEditor();
+    document.body.classList.toggle('layout-edit', on);
+    $('editBar').classList.toggle('show', on);
+    computeSlots(); render();
+    if(on) toast('拖曳機台移動位置；⤢ 改大小、✕ 刪除');
+  }
+  $('btnLayout').onclick = ()=> setLayoutEditing(true);
+  $('btnLayoutDone').onclick = ()=>{ setLayoutEditing(false); toast('佈局已儲存'); };
+  $('btnAddMachine').onclick = addMachine;
+  $('btnMenuLayout').onclick = ()=>{ openMenu(false); setLayoutEditing(true); };
 
   // ---- 場地選單 ----
   let cloudMeta = null;
@@ -744,7 +913,6 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
 
   renderPeriod();
   render();
-  $('verN').textContent = N;
 
   // ---- Firebase：Google 登入 + Firestore 即時同步 ----
   if(!CLOUD){
@@ -834,7 +1002,8 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
         }
         first = false;
         const d = snap.data();
-        if(editing<0 || !snap.metadata.hasPendingWrites){
+        if((editing<0 || !snap.metadata.hasPendingWrites) && !drag){
+          layoutOv = cleanLayoutOv(d.layoutOv || {}); computeSlots();
           machines = normalize(d.machines || {});
           shopExpenses = cleanExpenses(d.shopExpenses || {});
           // 雲端還有舊版欄位（單一營收／成本／已繳）→ 自動寫回一次新格式（合併寫入，不刪其他資料）
