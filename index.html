@@ -4,6 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>娃娃機台平面圖</title>
+<!-- PWA：可加到主畫面 -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#111418">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="娃娃機台">
 <style>
   :root{
     --bg:#111418; --panel:#1c2128; --line:#2c333d; --text:#e8ecf1; --muted:#9aa4b2;
@@ -12,7 +22,7 @@
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif}
-  header{position:relative;top:0;z-index:5;background:rgba(17,20,24,.95);backdrop-filter:blur(6px);
+  header{padding-top:calc(10px + env(safe-area-inset-top)) !important;position:relative;top:0;z-index:5;background:rgba(17,20,24,.95);backdrop-filter:blur(6px);
     border-bottom:1px solid var(--line);padding:10px 12px}
   .bar{max-width:640px;margin:0 auto;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
   h1{font-size:18px;margin:0}
@@ -168,7 +178,7 @@
   <div class="banner" id="banner">⚠️ 尚未設定雲端（firebaseConfig），目前為「僅本機」模式，資料只存在這台裝置。</div>
 </header>
 <main><div class="floor" id="floor"></div>
-  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10l・共 <span id="verN"></span> 台</div></main>
+  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10m・共 <span id="verN"></span> 台</div></main>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal" role="dialog" aria-modal="true">
@@ -866,6 +876,11 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
   $('btnAddMachine').onclick = addMachine;
   $('btnMenuLayout').onclick = ()=>{ openMenu(false); setLayoutEditing(true); };
 
+  // ---- PWA：註冊 Service Worker（只在 https / localhost 有效）----
+  if('serviceWorker' in navigator && (location.protocol==='https:' || location.hostname==='localhost')){
+    navigator.serviceWorker.register('./sw.js').catch(err=> console.warn('SW 註冊失敗', err));
+  }
+
   // ---- 場地選單 ----
   let cloudMeta = null;
   function renderVenueUI(){
@@ -949,11 +964,14 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     $('loginMsg').textContent = '';
     A.getRedirectResult(auth).catch(err=> showLogin('登入失敗：' + (err.code||err.message)));
 
+    const STANDALONE = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+    if(STANDALONE && IOS) $('loginMsg').innerHTML = '<span style="color:var(--muted)">主畫面 App 模式：若登入視窗無法完成，請改用 Safari 開啟網址登入使用。</span>';
     $('btnLogin').onclick = async ()=>{
       $('loginMsg').textContent = '';
       try{ await A.signInWithPopup(auth, provider); }
       catch(err){
-        if(err.code==='auth/popup-blocked' || err.code==='auth/operation-not-supported-in-this-environment'){
+        if(err.code==='auth/popup-blocked' || err.code==='auth/operation-not-supported-in-this-environment' || err.code==='auth/web-storage-unsupported'){
           await A.signInWithRedirect(auth, provider);
         } else if(err.code!=='auth/popup-closed-by-user' && err.code!=='auth/cancelled-popup-request'){
           showLogin('登入失敗：' + (err.code||err.message));
