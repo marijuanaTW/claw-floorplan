@@ -178,7 +178,7 @@
   <div class="banner" id="banner">⚠️ 尚未設定雲端（firebaseConfig），目前為「僅本機」模式，資料只存在這台裝置。</div>
 </header>
 <main><div class="floor" id="floor"></div>
-  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-10m・共 <span id="verN"></span> 台</div></main>
+  <div style="text-align:center;color:#4b5563;font-size:11px;margin-top:8px">版本 2026-10-11a・共 <span id="verN"></span> 台</div></main>
 
 <div class="modal-bg" id="modalBg">
   <div class="modal" role="dialog" aria-modal="true">
@@ -940,7 +940,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     $('loginBg').classList.add('open');
     $('loginMsg').textContent = msg;
     $('btnLogin').style.display = wrongAccount ? 'none' : '';
-    $('btnLoginRedirect').style.display = wrongAccount ? 'none' : '';
+    $('btnLoginRedirect').style.display = (wrongAccount || $('btnLoginRedirect').dataset.native) ? 'none' : '';
     $('btnLoginOther').style.display = wrongAccount ? '' : 'none';
   }
   function hideLogin(){ $('loginBg').classList.remove('open'); }
@@ -964,10 +964,29 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
     $('loginMsg').textContent = '';
     A.getRedirectResult(auth).catch(err=> showLogin('登入失敗：' + (err.code||err.message)));
 
-    const STANDALONE = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    // iOS App（Capacitor）內：用原生 Google 登入，再把 idToken 交給網頁 Firebase（網頁版行為不變）
+    const CAP = window.Capacitor;
+    const NATIVE_AUTH = !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform() && CAP.Plugins && CAP.Plugins.FirebaseAuthentication) ? CAP.Plugins.FirebaseAuthentication : null;
+    if(NATIVE_AUTH){
+      $('btnLoginRedirect').style.display = 'none';
+      $('btnLoginRedirect').dataset.native = '1';
+      $('btnLogin').onclick = async ()=>{
+        $('loginMsg').textContent = '';
+        try{
+          const res = await NATIVE_AUTH.signInWithGoogle();
+          const idToken = res && res.credential && res.credential.idToken;
+          if(!idToken) throw new Error('沒有取得 Google 憑證');
+          await A.signInWithCredential(auth, A.GoogleAuthProvider.credential(idToken, res.credential.accessToken || null));
+        }catch(err){
+          const m = String((err && (err.code||err.message)) || err);
+          if(!/cancel/i.test(m)) showLogin('登入失敗：' + m);
+        }
+      };
+    }
+    const STANDALONE = !NATIVE_AUTH && (matchMedia('(display-mode: standalone)').matches || navigator.standalone === true);
     const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
     if(STANDALONE && IOS) $('loginMsg').innerHTML = '<span style="color:var(--muted)">主畫面 App 模式：若登入視窗無法完成，請改用 Safari 開啟網址登入使用。</span>';
-    $('btnLogin').onclick = async ()=>{
+    if(!NATIVE_AUTH) $('btnLogin').onclick = async ()=>{
       $('loginMsg').textContent = '';
       try{ await A.signInWithPopup(auth, provider); }
       catch(err){
@@ -986,6 +1005,7 @@ const CACHE_KEY = 'clawFloorplan.cloudCache.v1'; // 雲端模式的本機快取�
       VENUES.forEach(v=> localStorage.removeItem(v.cacheKey));   // 登出時清除這台裝置上所有場地的資料快取
       machines = defaults(); render();
       await A.signOut(auth);
+      if(NATIVE_AUTH){ try{ await NATIVE_AUTH.signOut(); }catch(e){} }
     };
     $('btnLogout').onclick = ()=>{ if(confirm('確定要登出嗎？')) logout(); };
     $('btnLoginOther').onclick = logout;

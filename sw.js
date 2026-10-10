@@ -3,7 +3,7 @@
  * - 同網域靜態檔（圖示、manifest）：cache-first，背景更新
  * - 任何其他網域（Firebase SDK、Firestore、googleapis、Google 登入）一律不攔截、不快取
  */
-const VERSION = '2026-10-10m';
+const VERSION = '2026-10-11a';
 const CACHE = 'claw-floorplan-' + VERSION;
 const PRECACHE = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png',
   './icons/icon-maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png', './favicon.ico'];
