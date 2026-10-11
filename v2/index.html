@@ -46,12 +46,13 @@ header h1{font-size:17px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text
 .net{font-size:18px;font-weight:800}
 .pos{color:#4ade80}.neg{color:#f87171}
 /* 平面圖 */
-.floorwrap{width:100%;max-width:100%;box-sizing:border-box;position:relative;contain:layout paint;margin:8px 0;overflow:auto;touch-action:none;overscroll-behavior:contain;border-radius:6px;-webkit-overflow-scrolling:touch}
-.floorwrap .floor{margin:0 auto;touch-action:none}
+.floorwrap.editing-wrap,.floorwrap.editing-wrap .floor{touch-action:none}
+.floorwrap{width:100%;max-width:100%;box-sizing:border-box;position:relative;contain:layout paint;margin:8px 0;overflow:auto;touch-action:pan-x pan-y;border-radius:6px;-webkit-overflow-scrolling:touch}
+.floorwrap .floor{margin:0 auto;touch-action:pan-x pan-y}
 .zoombar{display:inline-flex;gap:4px;align-items:center}
 .zoombar button{min-width:38px;padding:7px 8px}
 #zoomPct{min-width:44px;text-align:center;font-size:13px;color:var(--muted)}
-.floor{position:relative;width:100%;container-type:inline-size;border:2px solid #4b5563;border-radius:6px;overflow:hidden;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+.floor{position:relative;width:100%;container-type:inline-size;border:2px solid #4b5563;border-radius:6px;overflow:hidden;touch-action:pan-x pan-y;user-select:none;-webkit-user-select:none}
 .floor.f-dark{background:#0b0d10}.floor.f-outdoor{background:#8b9099}.floor.f-indoor{background:#0a0a0a}
 .floor.editing{outline:3px dashed var(--accent);outline-offset:2px;background-image:linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px)}
 .ob{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;line-height:1.1;cursor:pointer}
@@ -240,7 +241,7 @@ const CFG = {
   APPLE_ENABLED: false,        // 需要 Apple Developer 帳號＋Firebase 啟用 Apple 供應商後才改成 true
   EMAIL_LOGIN_ENABLED: false,  // App 審核用示範帳號（需在 Firebase 啟用「電子郵件/密碼」）
   LEGACY_OWNER_EMAILS: ["qew59601211@gmail.com"],
-  VERSION: "v2-2026-10-11k",
+  VERSION: "v2-2026-10-11l",
 };
 const QS = new URLSearchParams(location.search);
 const EMU = QS.has('emu');
@@ -432,7 +433,7 @@ function renderVenueList(){
 function selectVenue(id){
   vUnsubs.forEach(f=>f()); vUnsubs = [];
   V = id; venue = venues.find(v=>v.id===id); localStorage.setItem('claw2.venue.'+U.uid, id);
-  objs={}; priv={}; shop={}; links={}; claims=[]; editing=false;
+  objs={}; priv={}; shop={}; links={}; claims=[]; editing=false; $('fwrap').classList.remove('editing-wrap');
   $('venueView').style.display=''; renderVenueList();
   const err = w => e => { console.warn(w, e.code); if(!selectVenue.retried){ selectVenue.retried = true; setTimeout(()=>{ if(V===id) selectVenue(id); }, 1500); } else toast(`讀取${w}失敗：${e.code}`, 5000); };
   setTimeout(()=>{ selectVenue.retried = false; }, 5000);
@@ -500,7 +501,9 @@ function blocked(r, selfId, type){
 // zoom = 平面圖寬度 ÷ 視窗寬度；最小＝整張圖放得進可見區域（寬與高），最大≈螢幕寬容納 3 台標準機台（0.8 m）
 let zoom = 1, zoomFit = true;   // zoomFit：維持「全圖」直到使用者自行縮放
 const fwrap = () => $('fwrap'), FL = () => $('floor');
-const wrapMaxH = () => Math.max(240, window.innerHeight - (document.getElementById('hdr').offsetHeight||56) - ($('btnEditLayout').closest('.toolbar').offsetHeight||44) - 28);   // 可見區域：扣掉頂部列與工具列
+let fitBaseW = 0, fitBaseH = 0;   // 視窗高度只在寬度改變時重新量（Safari 網址列伸縮不影響縮放）
+const baseH = () => { if(window.innerWidth !== fitBaseW || !fitBaseH){ fitBaseW = window.innerWidth; fitBaseH = window.innerHeight; } return fitBaseH; };
+const wrapMaxH = () => Math.max(240, baseH() - (document.getElementById('hdr').offsetHeight||56) - ($('btnEditLayout').closest('.toolbar').offsetHeight||44) - 28);   // 可見區域：扣掉頂部列與工具列
 function zoomLimits(){
   const W = venue.widthM, L = venue.lengthM, ww = fwrap().clientWidth || 400;
   const zFit = Math.min(1, wrapMaxH() / (ww * L / W));
@@ -533,7 +536,21 @@ $('btnZoomOut').onclick = ()=> applyZoom(zoom / 1.25, null, null, true);
 $('btnZoomFit').onclick = ()=> applyZoom(0, null, null, true);
 ['gesturestart','gesturechange','gestureend'].forEach(t=>document.addEventListener(t, e=>e.preventDefault(), {passive:false}));
 document.addEventListener('touchmove', e=>{ if(e.touches.length>1) e.preventDefault(); }, {passive:false});
-window.addEventListener('resize', ()=>{ if(venue && ROLE==='owner') applyZoom(zoom); });
+// 兩指捏合（只有 touches.length===2 且距離變化超過門檻才縮放）
+let tpinch = null;
+const tmid = t => ({x:(t[0].clientX+t[1].clientX)/2, y:(t[0].clientY+t[1].clientY)/2, d:Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY)});
+$('fwrap').addEventListener('touchstart', e=>{ if(e.touches.length===2){ const m = tmid(e.touches); tpinch = {d0:m.d, z0:zoom, x:m.x, y:m.y, on:false}; pan = null; if(drag && drag.moved) renderOwner(); drag = null; } else if(e.touches.length>2) tpinch = null; }, {passive:true});
+$('fwrap').addEventListener('touchmove', e=>{
+  if(!tpinch || e.touches.length!==2) return; e.preventDefault();
+  const m = tmid(e.touches), w = $('fwrap');
+  if(!tpinch.on){ if(Math.abs(m.d - tpinch.d0) < 12) return; tpinch.on = true; tpinch.d0 = m.d; tpinch.z0 = zoom; }
+  applyZoom(tpinch.z0 * m.d / Math.max(1, tpinch.d0), m.x, m.y, true);
+  w.scrollLeft -= m.x - tpinch.x; w.scrollTop -= m.y - tpinch.y; tpinch.x = m.x; tpinch.y = m.y;
+}, {passive:false});
+$('fwrap').addEventListener('touchend', e=>{ if(e.touches.length < 2) tpinch = null; }, {passive:true});
+$('fwrap').addEventListener('touchcancel', ()=>{ tpinch = null; }, {passive:true});
+let lastRW = window.innerWidth;
+window.addEventListener('resize', ()=>{ if(window.innerWidth === lastRW) return; lastRW = window.innerWidth; if(venue && ROLE==='owner') applyZoom(zoom); });
 $('fwrap').addEventListener('wheel', e=>{ if(e.ctrlKey){ e.preventDefault(); applyZoom(zoom * Math.exp(-e.deltaY/200), e.clientX, e.clientY, true); } }, {passive:false});
 
 /* ---------- 物件點擊／拖曳＋平移／雙指 ---------- */
@@ -541,11 +558,16 @@ let drag = null, pan = null;
 const ptrs = new Map(); let pinch = null;
 const mid = () => { const [a,b] = [...ptrs.values()]; return {x:(a.x+b.x)/2, y:(a.y+b.y)/2, d:Math.hypot(a.x-b.x, a.y-b.y)}; };
 $('fwrap').addEventListener('pointerdown', e=>{
+  const el0 = e.target.closest('.ob');
+  if(e.pointerType==='touch' && !(el0 && editing)){   // 觸控：交給瀏覽器原生捲動，只記錄點擊
+    if(!ptrs.size) pan = {sx:e.clientX, sy:e.clientY, moved:false, native:true, tapId: el0 ? el0.dataset.id : null};
+    ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY}); if(ptrs.size > 1) pan = null; return;
+  }
   ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
   try{ $('fwrap').setPointerCapture(e.pointerId); }catch(_){}
-  if(ptrs.size === 2){   // 兩指：取消拖曳物件，開始縮放／平移
+  if(ptrs.size === 2 && e.pointerType!=='touch'){   // 兩指：取消拖曳物件，開始縮放／平移
     if(drag && drag.moved) renderOwner();
-    drag = null; pan = null; const m = mid(); pinch = {d0:m.d, z0:zoom, x:m.x, y:m.y}; return;
+    drag = null; pan = null; const m = mid(); pinch = {d0:m.d, z0:zoom, x:m.x, y:m.y, ptr:true}; return;
   }
   if(ptrs.size > 2) return;
   const el = e.target.closest('.ob');
@@ -555,7 +577,7 @@ $('fwrap').addEventListener('pointerdown', e=>{
 $('fwrap').addEventListener('pointermove', e=>{
   if(!ptrs.has(e.pointerId)) return;
   ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
-  if(pinch && ptrs.size >= 2){
+  if(pinch && pinch.ptr && ptrs.size >= 2){
     const m = mid(), w = $('fwrap');
     applyZoom(pinch.z0 * m.d / Math.max(1, pinch.d0), m.x, m.y, true);
     w.scrollLeft -= m.x - pinch.x; w.scrollTop -= m.y - pinch.y; pinch.x = m.x; pinch.y = m.y; return;
@@ -563,6 +585,7 @@ $('fwrap').addEventListener('pointermove', e=>{
   if(pan){
     const dx = e.clientX - pan.sx, dy = e.clientY - pan.sy;
     if(!pan.moved && Math.hypot(dx,dy) < 6) return;
+    if(pan.native){ pan.moved = true; return; }
     pan.moved = true; const w = $('fwrap');
     const canX = w.scrollWidth > w.clientWidth + 1, canY = w.scrollHeight > w.clientHeight + 1;
     if(!canX && !canY){ window.scrollBy(0, -(e.clientY - (pan.ly ?? pan.sy))); pan.ly = e.clientY; return; }  // 沒放大：讓頁面捲動
@@ -579,7 +602,7 @@ $('fwrap').addEventListener('pointermove', e=>{
 });
 async function ptrEnd(e, cancel){
   ptrs.delete(e.pointerId);
-  if(pinch){ if(ptrs.size < 2) pinch = null; return; }
+  if(pinch && pinch.ptr){ if(ptrs.size < 2) pinch = null; return; }
   const p = pan; pan = null;
   if(p){ if(!p.moved && !cancel && p.tapId) openObj(p.tapId); return; }
   const d = drag; drag = null; if(!d) return;
@@ -592,7 +615,7 @@ async function ptrEnd(e, cancel){
 }
 $('fwrap').addEventListener('pointerup', e=> ptrEnd(e, false));
 $('fwrap').addEventListener('pointercancel', e=> ptrEnd(e, true));
-$('btnEditLayout').onclick = ()=>{ editing = !editing; $('btnEditLayout').textContent = editing ? '完成佈局' : '編輯佈局'; $('btnAdd').style.display = editing?'':'none'; $('layoutHint').style.display = editing?'':'none'; renderOwner(); };
+$('btnEditLayout').onclick = ()=>{ editing = !editing; $('fwrap').classList.toggle('editing-wrap', editing); $('btnEditLayout').textContent = editing ? '完成佈局' : '編輯佈局'; $('btnAdd').style.display = editing?'':'none'; $('layoutHint').style.display = editing?'':'none'; renderOwner(); };
 
 /* ---------- 新增物件 ---------- */
 let addSize = '中';
