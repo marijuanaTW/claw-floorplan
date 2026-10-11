@@ -236,7 +236,7 @@ const CFG = {
   APPLE_ENABLED: false,        // 需要 Apple Developer 帳號＋Firebase 啟用 Apple 供應商後才改成 true
   EMAIL_LOGIN_ENABLED: false,  // App 審核用示範帳號（需在 Firebase 啟用「電子郵件/密碼」）
   LEGACY_OWNER_EMAILS: ["qew59601211@gmail.com"],
-  VERSION: "v2-2026-10-11e",
+  VERSION: "v2-2026-10-11f",
 };
 const QS = new URLSearchParams(location.search);
 const EMU = QS.has('emu');
@@ -252,7 +252,7 @@ const STATUSES = ['營運中','維修中','待承租'];
 
 /* ============================== 小工具 ============================== */
 const $ = id => document.getElementById(id);
-const esc = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc = s => String(s??'').replace(/[&<>"']/g, c=>({'&':'&','<':'<','>':'>','"':'"',"'":'&#39;'}[c]));
 const num = v => (v===''||v==null||isNaN(+v)) ? 0 : +v;
 const r2 = v => Math.round(v*100)/100;
 const snap = v => r2(Math.round(v/SNAP)*SNAP);
@@ -602,7 +602,7 @@ $('addMachine').onclick = ()=> addObject('machine', addSize);
 $('addOthers').querySelectorAll('[data-t]').forEach(b=> b.onclick=()=> addObject(b.dataset.t));
 
 /* ---------- 物件／機台編輯 ---------- */
-let edYear = CUR_Y;
+let edYear = CUR_Y, edMonSel = new Date().getMonth()+1, edExpand = false;
 function openObj(id){
   const o = objs[id]; if(!o) return;
   const f = $('fObj');
@@ -626,7 +626,7 @@ function openObj(id){
   }
   const p = structuredClone(priv[id] || {});
   p.rentPaid ||= {}; p.revenueByMonth ||= {}; p.costByMonth ||= {};
-  edYear = viewY;
+  edYear = viewY; edMonSel = viewM; edExpand = false;
   const ln = links[id];
   const sizeOpts = Object.keys(SIZES).map(k=>`<option ${o.size===k?'selected':''}>${k}</option>`).join('') + (SIZES[o.size] ? '' : `<option value="" selected>自訂 ${r2(o.w)}×${r2(o.h)} m</option>`);
   f.innerHTML = `<h2>機台 ${esc(o.no)}</h2>
@@ -638,7 +638,7 @@ function openObj(id){
     ${ln ? `<div class="card" style="padding:8px">🔗 已連結台主帳號：${esc(ln.tenantName||'')} ${esc(ln.tenantEmail||'')}（台主可看到此機台位置與自己的繳費狀態）<br><button value="unlink" formnovalidate style="margin-top:6px">解除連結</button></div>` : ''}
     <div class="row" style="margin-top:8px;flex-wrap:nowrap"><label style="margin:0;flex:none">年度</label><select id="edY">${[CUR_Y-1,CUR_Y,CUR_Y+1].map(y=>`<option ${y===edYear?'selected':''}>${y}</option>`).join('')}</select></div>
     <label>每月租金繳納（點選切換已繳）</label><div class="chips" id="edChips"></div>
-    <label>每月營收／成本</label><div style="max-height:30vh;overflow:auto"><table class="mtab" id="edTab"></table></div>
+    <div class="row" style="margin-top:8px;flex-wrap:nowrap;align-items:center"><label style="margin:0;flex:1">每月營收／成本</label><select id="edM" style="width:auto;flex:none">${[...Array(12)].map((_,k)=>`<option value="${k+1}" ${k+1===edMonSel?'selected':''}>${k+1}月</option>`).join('')}</select><button type="button" id="edExp" title="展開全部月份" style="flex:none;width:auto;padding:4px 10px">${edExpand?'⤡':'⤢'}</button></div><div style="max-height:30vh;overflow:auto"><table class="mtab" id="edTab"></table></div>
     <div class="muted" id="edNet"></div>
     <label>備註</label><input name="notes" value="${esc(p.notes||'')}" maxlength="200">
     <div class="row" style="margin-top:12px"><button value="del" class="danger" formnovalidate>刪除</button><button value="cancel" formnovalidate>取消</button><button class="pri" value="ok">儲存</button></div>`;
@@ -648,7 +648,7 @@ function openObj(id){
     $('edChips').innerHTML = [...Array(12)].map((_,k)=>`<div class="chip ${isPaid(p,y,k+1)?'on':''}" data-m="${k+1}" style="${dis?'opacity:.35;pointer-events:none':''}">${k+1}月</div>`).join('');
     $('edChips').querySelectorAll('.chip').forEach(c=> c.onclick=()=>{ (p.rentPaid[y] ||= {}); p.rentPaid[y][c.dataset.m] = !p.rentPaid[y][c.dataset.m]; c.classList.toggle('on'); });
     $('edTab').innerHTML = '<tr><th>月</th><th>營收</th><th>成本</th><th>淨</th></tr>' + [...Array(12)].map((_,k)=>{ const m=k+1, rv=getMon(p.revenueByMonth,y,m), cs=getMon(p.costByMonth,y,m);
-      return `<tr><td>${m}</td><td><input data-k="revenueByMonth|${y}|${m}" type="number" inputmode="numeric" value="${esc(rv)}"></td><td><input data-k="costByMonth|${y}|${m}" type="number" inputmode="numeric" value="${esc(cs)}"></td><td>${rv===''&&cs===''?'':Math.round(num(rv)-num(cs))}</td></tr>`; }).join('');
+      return `<tr data-m="${m}" style="${edExpand||m===edMonSel?'':'display:none'}"><td>${m}</td><td><input data-k="revenueByMonth|${y}|${m}" type="number" inputmode="numeric" value="${esc(rv)}"></td><td><input data-k="costByMonth|${y}|${m}" type="number" inputmode="numeric" value="${esc(cs)}"></td><td>${rv===''&&cs===''?'':Math.round(num(rv)-num(cs))}</td></tr>`; }).join('');
     const yr = [...Array(12)].reduce((a,_,k)=>a+num(getMon(p.revenueByMonth,y,k+1))-num(getMon(p.costByMonth,y,k+1)),0);
     $('edNet').textContent = `${y} 年機台淨額：${money(yr)}` + (dis ? '（自管：計入每月總淨收入）' : '（台主所有，不計入店面淨收入）');
     f.elements.rent.disabled = dis;
@@ -656,6 +656,9 @@ function openObj(id){
   f.addEventListener('input', e=>{ if(e.target.closest('#edTab')){ syncMoney(); const y=String(edYear); const yr=[...Array(12)].reduce((a,_,k)=>a+num(getMon(p.revenueByMonth,y,k+1))-num(getMon(p.costByMonth,y,k+1)),0);
     const tr=e.target.closest('tr'); const [a,c]=tr.querySelectorAll('input'); tr.lastElementChild.textContent = (a.value===''&&c.value==='')?'':Math.round(num(a.value)-num(c.value));
     $('edNet').textContent = $('edNet').textContent.replace(/NT\$[-\d,]+/, money(yr)); } });
+  const applyMon = ()=>{ f.querySelectorAll('#edTab tr[data-m]').forEach(tr=> tr.style.display = (edExpand || +tr.dataset.m===edMonSel) ? '' : 'none'); const b=$('edExp'); b.textContent = edExpand?'⤡':'⤢'; b.title = edExpand?'收合（只看選定月份）':'展開全部月份'; $('edM').disabled = edExpand; };
+  f.querySelector('#edM').onchange = e=>{ edMonSel=+e.target.value; applyMon(); };
+  f.querySelector('#edExp').onclick = ()=>{ edExpand=!edExpand; applyMon(); };
   f.querySelector('#edY').onchange = e=>{ syncMoney(); edYear=+e.target.value; drawYear(); };
   f.elements.selfManaged.onchange = ()=>{ syncMoney(); drawYear(); };
   drawYear();
