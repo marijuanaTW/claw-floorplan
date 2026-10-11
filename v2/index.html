@@ -216,7 +216,9 @@ dialog h2{margin:0 0 6px;font-size:18px}
   <label>地點</label><input name="location" required maxlength="80" placeholder="例如：來都來了楠梓店">
   <div class="row"><div><label>類型（選填）</label><select name="type"><option value="">—</option><option>娃娃機</option><option>兌幣機</option><option>其他</option></select></div>
   <div><label>尺寸（選填）</label><select name="size"><option value="">—</option></select></div></div>
+  <label>每月租金（付給場地，預設帶入每月租金欄）</label><input name="monthlyRent" type="number" inputmode="numeric" min="0" placeholder="例如 3000">
   <label>備註</label><textarea name="notes" rows="3" maxlength="500"></textarea>
+  <div id="tmFin"></div>
   <div class="row" style="margin-top:12px"><button value="del" class="danger" id="tmDel" formnovalidate>刪除</button><button value="cancel" formnovalidate>取消</button><button class="pri" value="ok">儲存</button></div>
 </form></dialog>
 <!-- 對話框：連結場地 -->
@@ -241,7 +243,7 @@ const CFG = {
   APPLE_ENABLED: false,        // 需要 Apple Developer 帳號＋Firebase 啟用 Apple 供應商後才改成 true
   EMAIL_LOGIN_ENABLED: false,  // App 審核用示範帳號（需在 Firebase 啟用「電子郵件/密碼」）
   LEGACY_OWNER_EMAILS: ["qew59601211@gmail.com"],
-  VERSION: "v2-2026-10-11l",
+  VERSION: "v2-2026-10-11m",
 };
 const QS = new URLSearchParams(location.search);
 const EMU = QS.has('emu');
@@ -1082,26 +1084,63 @@ function renderTenant(){
       linkHtml = cs && cs.status==='pending' && cs.tenantMachineId===id ? `<div style="margin-top:8px"><span class="badge wait">等待場主核准</span> <span class="muted">邀請碼 ${esc(cs.code)}・編號 ${esc(cs.machineNo)}</span></div>`
         : (cs && cs.status==='rejected' && cs.tenantMachineId===id ? `<div style="margin-top:8px"><span class="badge">場主未核准</span> <button data-link="${id}">重新申請</button></div>` : `<div style="margin-top:8px"><span class="muted">未連結場地（私人）</span> <button data-link="${id}">用邀請碼連結場地</button></div>`);
     }
-    return `<div class="card"><div class="tm"><div><b>${esc(m.name)}</b><div class="muted">📍 ${esc(m.location)}${m.type?'・'+esc(m.type):''}${m.size?'・'+esc(m.size):''}</div>${m.notes?`<div class="muted">${esc(m.notes)}</div>`:''}</div><button data-edit="${id}">編輯</button></div>${linkHtml}</div>`; }).join('');
+    return `<div class="card"><div class="tm"><div><b>${esc(m.name)}</b><div class="muted">📍 ${esc(m.location)}${m.type?'・'+esc(m.type):''}${m.size?'・'+esc(m.size):''}</div>${m.notes?`<div class="muted">${esc(m.notes)}</div>`:''}${(n=>`<div style="margin-top:4px">${viewY}/${viewM} 淨收入：${n==null?'<span class="muted">尚未填寫</span>':`<b style="color:${n>=0?'#4ade80':'#f87171'}">${money(n)}</b>`}</div>`)(tmMonthNet(m.fin, m.monthlyRent, String(viewY), viewM))}</div><button data-edit="${id}">編輯／收支</button></div>${linkHtml}</div>`; }).join('');
   $('tmList').querySelectorAll('[data-edit]').forEach(b=> b.onclick=()=> tmDialog(b.dataset.edit));
   $('tmList').querySelectorAll('[data-link]').forEach(b=> b.onclick=()=> linkDialog(b.dataset.link));
   $('tmList').querySelectorAll('[data-plan]').forEach(b=> b.onclick=()=> showPlan(myLinks.find(l=>l.tenantMachineId===b.dataset.plan)));
 }
 $('fTM').elements.size.innerHTML = '<option value="">—</option>' + Object.keys(SIZES).map(k=>`<option value="${k}">${sizeLabel(k)}</option>`).join('');
 $('btnAddTM').onclick = ()=> tmDialog(null);
+/* 台主每月收支（存在 users/{uid}/machines/{mid}.fin，只有台主自己可讀寫）*/
+const TF = [['coin','投幣營收'],['rent','租金'],['prize','獎品成本'],['other','其他成本']];
+const tfGet = (fin,k,y,m) => { const v = fin && fin[k] && fin[k][y] && fin[k][y][m]; return v==null ? '' : String(v); };
+function tmMonthNet(fin, mr, y, m){   // 租金空白 → 該月有任何資料時用預設每月租金
+  const c = tfGet(fin,'coin',y,m), r = tfGet(fin,'rent',y,m), pz = tfGet(fin,'prize',y,m), o = tfGet(fin,'other',y,m);
+  const any = c!=='' || r!=='' || pz!=='' || o!=='';
+  if(!any) return null;
+  return num(c) - (r!=='' ? num(r) : num(mr)) - num(pz) - num(o);
+}
+let tfYear = CUR_Y, tfMon = CUR_M, tfExpand = false;
+function tmFinUI(fin, getMR){
+  const box = $('tmFin');
+  const sync = ()=> box.querySelectorAll('input[data-k]').forEach(i=>{ const [k,y,m] = i.dataset.k.split('|'); ((fin[k] ||= {})[y] ||= {})[m] = i.value.trim(); });
+  const draw = ()=>{
+    const y = String(tfYear), mr = getMR();
+    const rows = [...Array(12)].map((_,q)=>{ const m = q+1, n = tmMonthNet(fin, mr, y, m);
+      return `<tr data-m="${m}" style="${tfExpand||m===tfMon?'':'display:none'}"><td>${m}</td>${TF.map(([k])=>`<td><input data-k="${k}|${y}|${m}" type="number" inputmode="numeric" value="${esc(tfGet(fin,k,y,m))}" ${k==='rent'&&mr?`placeholder="${esc(mr)}"`:''}></td>`).join('')}<td class="tn">${n==null?'':Math.round(n).toLocaleString('zh-TW')}</td></tr>`; }).join('');
+    const yr = [...Array(12)].reduce((a,_,q)=>a+(tmMonthNet(fin, mr, y, q+1)||0),0);
+    box.innerHTML = `<div class="row" style="margin-top:10px;flex-wrap:nowrap;align-items:center"><label style="margin:0;flex:1">每月收支</label>
+      <select id="tfY" style="width:auto;flex:none">${[CUR_Y-1,CUR_Y,CUR_Y+1].map(v=>`<option ${v===tfYear?'selected':''}>${v}</option>`).join('')}</select>
+      <select id="tfM" style="width:auto;flex:none" ${tfExpand?'disabled':''}>${[...Array(12)].map((_,q)=>`<option value="${q+1}" ${q+1===tfMon?'selected':''}>${q+1}月</option>`).join('')}</select>
+      <button type="button" id="tfExp" title="${tfExpand?'收合（只看選定月份）':'展開全部月份'}" style="flex:none;width:auto;padding:4px 10px">${tfExpand?'⤡':'⤢'}</button></div>
+      <div style="max-height:34vh;overflow:auto"><table class="mtab" id="tfTab"><tr><th>月</th><th>投幣(幣量)</th><th>租金</th><th>獎品</th><th>其他</th><th>淨</th></tr>${rows}</table></div>
+      <div class="muted" id="tfNet">${y} 年淨收入：${money(yr)}（淨 = 投幣 − 租金 − 獎品 − 其他；租金空白時以每月租金計）</div>`;
+    $('tfY').onchange = e=>{ sync(); tfYear = +e.target.value; draw(); };
+    $('tfM').onchange = e=>{ tfMon = +e.target.value; box.querySelectorAll('#tfTab tr[data-m]').forEach(tr=> tr.style.display = (+tr.dataset.m===tfMon)?'':'none'); };
+    $('tfExp').onclick = ()=>{ sync(); tfExpand = !tfExpand; draw(); };
+  };
+  box.oninput = e=>{ if(!e.target.dataset.k) return; sync(); const y = String(tfYear), mr = getMR(), tr = e.target.closest('tr'), n = tmMonthNet(fin, mr, y, +tr.dataset.m);
+    tr.querySelector('.tn').textContent = n==null?'':Math.round(n).toLocaleString('zh-TW');
+    $('tfNet').textContent = $('tfNet').textContent.replace(/NT\$[-\d,]+/, money([...Array(12)].reduce((a,_,q)=>a+(tmMonthNet(fin, mr, y, q+1)||0),0))); };
+  draw(); return {sync, draw};
+}
 function tmDialog(id){
   const f = $('fTM'), m = id ? tms[id] : {};
-  for(const k of ['name','location','type','size','notes']) f.elements[k].value = m[k] || '';
+  for(const k of ['name','location','type','size','notes','monthlyRent']) f.elements[k].value = m[k] || '';
   $('tmDel').style.display = id ? '' : 'none';
+  const fin = structuredClone(m.fin || {}); tfYear = viewY; tfMon = viewM; tfExpand = false;
+  const fui = tmFinUI(fin, ()=> f.elements.monthlyRent.value.trim());
+  f.elements.monthlyRent.oninput = ()=>{ fui.sync(); fui.draw(); };
   $('dlgTM').returnValue=''; $('dlgTM').showModal();
   $('dlgTM').onclose = async ()=>{
     const rv = $('dlgTM').returnValue;
     if(rv==='del'){ if(confirm('刪除這台機台？（已連結的場地資料不受影響，請另請場主解除連結）')) await F.deleteDoc(D('users',U.uid,'machines',id)).catch(e=>toast(e.code)); return; }
     if(rv!=='ok') return;
-    const d = {}; for(const k of ['name','location','type','size','notes']) d[k] = f.elements[k].value.trim();
+    const d = {}; for(const k of ['name','location','type','size','notes','monthlyRent']) d[k] = f.elements[k].value.trim();
+    fui.sync(); d.fin = {}; for(const [k] of TF){ d.fin[k] = {}; for(const [y,ms] of Object.entries(fin[k]||{})){ if(!/^\d{4}$/.test(y)) continue; d.fin[k][y] = {}; for(let q=1;q<=12;q++){ const v = ms && ms[q]!=null ? String(ms[q]).trim() : ''; if(v!=='') d.fin[k][y][q] = v; } } }
     d.updatedAt = ts();
     const ref = id ? D('users',U.uid,'machines',id) : F.doc(C('users',U.uid,'machines'));
-    await F.setDoc(ref, d, {merge:true}).then(()=>toast('已儲存')).catch(e=>toast('儲存失敗：'+e.code));
+    await F.setDoc(ref, d, {mergeFields:Object.keys(d)}).then(()=>toast('已儲存')).catch(e=>toast('儲存失敗：'+e.code));
   };
 }
 function linkDialog(id){
