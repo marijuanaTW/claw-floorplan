@@ -2,7 +2,7 @@
 <html lang="zh-Hant-TW">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>娃娃機台 v2</title>
 <meta name="theme-color" content="#111418">
 <link rel="icon" href="../favicon.ico" sizes="any">
@@ -12,6 +12,8 @@
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif}
 body{padding-bottom:env(safe-area-inset-bottom)}
+html,body{overflow-x:hidden;max-width:100%;touch-action:pan-x pan-y}
+.screen,#venueView,.sum,.toolbar{min-width:0;max-width:100%}
 button,select,input,textarea{font:inherit;color:inherit}
 button{background:#2a313b;border:1px solid var(--line);border-radius:9px;padding:8px 12px;cursor:pointer}
 button.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
@@ -44,7 +46,7 @@ header h1{font-size:17px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text
 .net{font-size:18px;font-weight:800}
 .pos{color:#4ade80}.neg{color:#f87171}
 /* 平面圖 */
-.floorwrap{width:100%;margin:8px 0;overflow:auto;touch-action:none;overscroll-behavior:contain;border-radius:6px;-webkit-overflow-scrolling:touch}
+.floorwrap{width:100%;max-width:100%;box-sizing:border-box;position:relative;contain:layout paint;margin:8px 0;overflow:auto;touch-action:none;overscroll-behavior:contain;border-radius:6px;-webkit-overflow-scrolling:touch}
 .floorwrap .floor{margin:0 auto;touch-action:none}
 .zoombar{display:inline-flex;gap:4px;align-items:center}
 .zoombar button{min-width:38px;padding:7px 8px}
@@ -236,7 +238,7 @@ const CFG = {
   APPLE_ENABLED: false,        // 需要 Apple Developer 帳號＋Firebase 啟用 Apple 供應商後才改成 true
   EMAIL_LOGIN_ENABLED: false,  // App 審核用示範帳號（需在 Firebase 啟用「電子郵件/密碼」）
   LEGACY_OWNER_EMAILS: ["qew59601211@gmail.com"],
-  VERSION: "v2-2026-10-11f",
+  VERSION: "v2-2026-10-11g",
 };
 const QS = new URLSearchParams(location.search);
 const EMU = QS.has('emu');
@@ -516,6 +518,8 @@ function restoreZoom(){ const v = localStorage.getItem('claw2.zoom.' + V), z = +
 $('btnZoomIn').onclick = ()=> applyZoom(zoom * 1.25, null, null, true);
 $('btnZoomOut').onclick = ()=> applyZoom(zoom / 1.25, null, null, true);
 $('btnZoomFit').onclick = ()=> applyZoom(0, null, null, true);
+['gesturestart','gesturechange','gestureend'].forEach(t=>document.addEventListener(t, e=>e.preventDefault(), {passive:false}));
+document.addEventListener('touchmove', e=>{ if(e.touches.length>1) e.preventDefault(); }, {passive:false});
 window.addEventListener('resize', ()=>{ if(venue && ROLE==='owner') applyZoom(zoom); });
 $('fwrap').addEventListener('wheel', e=>{ if(e.ctrlKey){ e.preventDefault(); applyZoom(zoom * Math.exp(-e.deltaY/200), e.clientX, e.clientY, true); } }, {passive:false});
 
