@@ -184,6 +184,8 @@ dialog h2{margin:0 0 6px;font-size:18px}
 
 <!-- 對話框：機台／物件 -->
 <dialog id="dlgObj"><form method="dialog" id="fObj"></form></dialog>
+<!-- 對話框：兌幣機設定／補幣紀錄 -->
+<dialog id="dlgEx"><div id="exBody"></div></dialog>
 <!-- 對話框：新增物件 -->
 <dialog id="dlgAdd"><h2>新增物件</h2>
   <label>娃娃機尺寸</label><div class="sizes" id="addSizes"></div>
@@ -234,7 +236,7 @@ const CFG = {
   APPLE_ENABLED: false,        // 需要 Apple Developer 帳號＋Firebase 啟用 Apple 供應商後才改成 true
   EMAIL_LOGIN_ENABLED: false,  // App 審核用示範帳號（需在 Firebase 啟用「電子郵件/密碼」）
   LEGACY_OWNER_EMAILS: ["qew59601211@gmail.com"],
-  VERSION: "v2-2026-10-11d",
+  VERSION: "v2-2026-10-11e",
 };
 const QS = new URLSearchParams(location.search);
 const EMU = QS.has('emu');
@@ -604,6 +606,7 @@ let edYear = CUR_Y;
 function openObj(id){
   const o = objs[id]; if(!o) return;
   const f = $('fObj');
+  if(o.type==='exchanger' && !editing){ openExchanger(id); return; }
   if(o.type!=='machine'){
     f.innerHTML = `<h2>${esc(TYPES[o.type]?.name||o.type)}</h2>
       <label>標籤文字</label><input name="label" value="${esc(o.label??'')}" maxlength="20">
@@ -675,6 +678,87 @@ function openObj(id){
     await b.commit().then(()=>toast('已儲存')).catch(e=>toast('儲存失敗：'+e.code, 5000));
   };
   $('dlgObj').returnValue=''; $('dlgObj').showModal();
+}
+
+
+/* ---------- 兌幣機設定＋補幣紀錄（存在 venues/{v}/finance/refill_<物件id>，只有場主可讀寫）---------- */
+let exUnsub = null, exId = null, exEntries = {}, exView = 'log', exWeekEnd = null, exEditKey = null;
+const pad2 = n => String(n).padStart(2,'0');
+const toLocalInput = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+const fmtDT = ms => { const d = new Date(ms); return `${d.getFullYear()}/${pad2(d.getMonth()+1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+const dayStart = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const WD = '日一二三四五六';
+const exRef = id => D('venues', V, 'finance', 'refill_' + id);
+function openExchanger(id){
+  exId = id; exView = 'log'; exEditKey = null; exEntries = {}; exWeekEnd = dayStart(new Date());
+  if(exUnsub) exUnsub();
+  exUnsub = F.onSnapshot(exRef(id), s=>{ exEntries = (s.exists() && s.data().entries) || {}; renderEx(); }, e=> toast('讀取補幣紀錄失敗：'+e.code, 5000));
+  $('dlgEx').onclose = ()=>{ if(exUnsub){ exUnsub(); exUnsub = null; } exId = null; };
+  renderEx(); $('dlgEx').showModal();
+}
+const exList = () => Object.entries(exEntries).map(([k,e])=>({k, ...e})).filter(e=>Number.isFinite(e.at)).sort((a,b)=> b.at - a.at);
+function renderEx(){
+  if(!exId || !objs[exId]) return;
+  const o = objs[exId], box = $('exBody'), list = exList();
+  const head = `<h2>兌幣機設定</h2>
+    <label>名稱／標籤</label><div class="row" style="flex-wrap:nowrap"><input id="exLabel" value="${esc(o.label ?? '兌幣機')}" maxlength="20"><button id="exLabelSave" style="flex:none">儲存名稱</button></div>
+    <div class="toolbar" style="margin-top:12px"><button id="exTabLog" class="${exView==='log'?'pri':''}">補幣紀錄</button><button id="exTabWeek" class="${exView==='week'?'pri':''}">查一週帳</button></div>`;
+  let body;
+  if(exView==='log'){
+    const ed = exEditKey ? exEntries[exEditKey] : null;
+    body = `<div class="card" style="padding:10px">
+      <b>${ed ? '編輯紀錄' : '新增補幣'}</b>
+      <label>補幣日期</label><input id="exAt" type="datetime-local" value="${toLocalInput(ed ? new Date(ed.at) : new Date())}">
+      <div class="row" style="flex-wrap:nowrap"><div><label>金額（NT$）</label><input id="exAmt" type="number" inputmode="numeric" min="0" step="1" value="${ed ? esc(ed.amount) : ''}"></div>
+      <div><label>備註（選填）</label><input id="exNote" maxlength="100" value="${ed ? esc(ed.note||'') : ''}"></div></div>
+      <div class="row" style="margin-top:8px">${ed ? '<button id="exCancelEd">取消編輯</button>' : ''}<button class="pri" id="exAdd">${ed ? '儲存修改' : '＋ 新增紀錄'}</button></div></div>
+      <div class="muted">共 ${list.length} 筆・合計 ${money(list.reduce((a,e)=>a+num(e.amount),0))}</div>
+      <div style="max-height:34vh;overflow:auto;margin-top:6px">${list.map(e=>`<div class="tm" style="border-bottom:1px solid var(--line);padding:6px 0">
+        <div><b>${money(num(e.amount))}</b> <span class="muted">${fmtDT(e.at)}</span>${e.note?`<div class="muted">${esc(e.note)}</div>`:''}</div>
+        <div style="display:flex;gap:4px;flex:none"><button data-ed="${e.k}">編輯</button><button data-del="${e.k}" class="danger">刪除</button></div></div>`).join('') || '<div class="muted" style="padding:10px 0">尚無補幣紀錄</div>'}</div>
+      <div class="row" style="margin-top:10px"><button id="exClear" class="danger" ${list.length?'':'disabled'}>全部清除</button><button id="exClose">關閉</button></div>`;
+  } else {
+    const end = exWeekEnd, start = new Date(end.getFullYear(), end.getMonth(), end.getDate()-6);
+    const days = [...Array(7)].map((_,i)=> new Date(start.getFullYear(), start.getMonth(), start.getDate()+i));
+    const rows = days.map(d=>{ const a = d.getTime(), b = new Date(d.getFullYear(), d.getMonth(), d.getDate()+1).getTime();
+      const es = list.filter(e=> e.at >= a && e.at < b); return {d, n:es.length, sum:es.reduce((x,e)=>x+num(e.amount),0)}; });
+    const tot = rows.reduce((a,r)=>a+r.sum,0), cnt = rows.reduce((a,r)=>a+r.n,0);
+    const isCur = end.getTime() >= dayStart(new Date()).getTime();
+    const f = d => `${d.getMonth()+1}/${d.getDate()}`;
+    body = `<div class="row" style="flex-wrap:nowrap;margin:6px 0"><button id="exPrev" style="flex:none">◀ 上一週</button><div style="text-align:center"><b>${start.getFullYear()} ${f(start)} – ${f(end)}</b></div><button id="exNext" style="flex:none" ${isCur?'disabled':''}>下一週 ▶</button></div>
+      <table class="mtab" style="font-size:14px"><tr><th style="text-align:left">日期</th><th>筆數</th><th style="text-align:right">金額</th></tr>
+      ${rows.map(r=>`<tr><td>${f(r.d)}（${WD[r.d.getDay()]}）</td><td style="text-align:center">${r.n||''}</td><td style="text-align:right">${r.sum?money(r.sum):'—'}</td></tr>`).join('')}
+      <tr><th style="text-align:left">本週合計</th><th>${cnt} 筆</th><th style="text-align:right">${money(tot)}</th></tr></table>
+      <div class="row" style="margin-top:10px">${isCur?'':'<button id="exToday">回到本週</button>'}<button id="exClose">關閉</button></div>`;
+  }
+  box.innerHTML = head + body;
+  $('exLabelSave').onclick = async ()=>{ await F.setDoc(D('venues',V,'objects',exId), {label:$('exLabel').value.trim()}, {merge:true}).then(()=>toast('已儲存名稱')).catch(e=>toast('儲存失敗：'+e.code)); };
+  $('exTabLog').onclick = ()=>{ exView='log'; renderEx(); };
+  $('exTabWeek').onclick = ()=>{ exView='week'; renderEx(); };
+  $('exClose').onclick = ()=> $('dlgEx').close();
+  if(exView==='log'){
+    $('exAdd').onclick = async ()=>{
+      const at = new Date($('exAt').value).getTime(), amount = $('exAmt').value.trim();
+      if(!Number.isFinite(at)){ toast('請選擇補幣日期'); return; }
+      if(amount==='' || isNaN(+amount) || +amount < 0){ toast('請輸入金額'); return; }
+      const key = exEditKey || ('e' + Date.now().toString(36) + Math.random().toString(36).slice(2,6));
+      const entry = {at, amount:String(Math.round(+amount)), note:$('exNote').value.trim(), updatedAt:Date.now()};
+      try{ await F.setDoc(exRef(exId), {entries:{[key]:entry}, objectId:exId, updatedAt:ts()}, {merge:true}); toast(exEditKey ? '已修改' : '已新增補幣紀錄'); exEditKey = null; renderEx(); }
+      catch(e){ toast('儲存失敗：'+e.code, 5000); }
+    };
+    if($('exCancelEd')) $('exCancelEd').onclick = ()=>{ exEditKey = null; renderEx(); };
+    $('exBody').querySelectorAll('[data-ed]').forEach(b=> b.onclick = ()=>{ exEditKey = b.dataset.ed; renderEx(); });
+    $('exBody').querySelectorAll('[data-del]').forEach(b=> b.onclick = async ()=>{
+      const e = exEntries[b.dataset.del]; if(!confirm(`刪除 ${fmtDT(e.at)} ${money(num(e.amount))} 這筆紀錄？`)) return;
+      await F.updateDoc(exRef(exId), {[`entries.${b.dataset.del}`]: F.deleteField()}).then(()=>toast('已刪除')).catch(er=>toast('刪除失敗：'+er.code)); });
+    $('exClear').onclick = async ()=>{
+      if(!confirm(`確定清除「${o.label||'兌幣機'}」的全部 ${list.length} 筆補幣紀錄？此動作無法復原。`)) return;
+      await F.setDoc(exRef(exId), {entries:{}, objectId:exId, clearedAt:ts()}).then(()=>toast('已全部清除')).catch(e=>toast('清除失敗：'+e.code)); };
+  } else {
+    $('exPrev').onclick = ()=>{ exWeekEnd = new Date(exWeekEnd.getFullYear(), exWeekEnd.getMonth(), exWeekEnd.getDate()-7); renderEx(); };
+    $('exNext').onclick = ()=>{ const n = new Date(exWeekEnd.getFullYear(), exWeekEnd.getMonth(), exWeekEnd.getDate()+7), t = dayStart(new Date()); exWeekEnd = n > t ? t : n; renderEx(); };
+    if($('exToday')) $('exToday').onclick = ()=>{ exWeekEnd = dayStart(new Date()); renderEx(); };
+  }
 }
 
 /* ---------- 全部儲存 ---------- */
