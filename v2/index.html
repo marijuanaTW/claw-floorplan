@@ -44,7 +44,11 @@ header h1{font-size:17px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text
 .net{font-size:18px;font-weight:800}
 .pos{color:#4ade80}.neg{color:#f87171}
 /* 平面圖 */
-.floorwrap{width:100%;margin:8px 0}
+.floorwrap{width:100%;margin:8px 0;overflow:auto;touch-action:none;overscroll-behavior:contain;border-radius:6px;-webkit-overflow-scrolling:touch}
+.floorwrap .floor{margin:0 auto;touch-action:none}
+.zoombar{display:inline-flex;gap:4px;align-items:center}
+.zoombar button{min-width:38px;padding:7px 8px}
+#zoomPct{min-width:44px;text-align:center;font-size:13px;color:var(--muted)}
 .floor{position:relative;width:100%;container-type:inline-size;border:2px solid #4b5563;border-radius:6px;overflow:hidden;touch-action:pan-y;user-select:none;-webkit-user-select:none}
 .floor.f-dark{background:#0b0d10}.floor.f-outdoor{background:#8b9099}.floor.f-indoor{background:#0a0a0a}
 .floor.editing{outline:3px dashed var(--accent);outline-offset:2px;background-image:linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px)}
@@ -162,10 +166,11 @@ dialog h2{margin:0 0 6px;font-size:18px}
     <div id="claimsBox"></div>
     <div class="toolbar">
       <button id="btnEditLayout">編輯佈局</button>
+      <span class="zoombar"><button id="btnZoomOut" aria-label="縮小">－</button><span id="zoomPct">100%</span><button id="btnZoomIn" aria-label="放大">＋</button><button id="btnZoomFit">全圖</button></span>
       <button id="btnAdd" style="display:none" class="pri">＋ 新增物件</button>
       <span class="muted" id="layoutHint" style="display:none;align-self:center">拖曳移動（對齊 5 公分），點一下編輯</span>
     </div>
-    <div class="floorwrap"><div class="floor" id="floor"></div></div>
+    <div class="floorwrap" id="fwrap"><div class="floor" id="floor"></div></div>
     <div class="muted" id="scaleNote"></div>
   </div>
 </section>
@@ -229,7 +234,7 @@ const CFG = {
   APPLE_ENABLED: false,        // 需要 Apple Developer 帳號＋Firebase 啟用 Apple 供應商後才改成 true
   EMAIL_LOGIN_ENABLED: false,  // App 審核用示範帳號（需在 Firebase 啟用「電子郵件/密碼」）
   LEGACY_OWNER_EMAILS: ["qew59601211@gmail.com"],
-  VERSION: "v2-2026-10-11c",
+  VERSION: "v2-2026-10-11d",
 };
 const QS = new URLSearchParams(location.search);
 const EMU = QS.has('emu');
@@ -430,11 +435,13 @@ function fillMonthSel(){
 }
 $('selY').onchange = e=>{ viewY=+e.target.value; renderOwner(); };
 $('selM').onchange = e=>{ viewM=+e.target.value; renderOwner(); };
+let zoomFor = '';
 function renderOwner(){
   if(!venue) return;
   $('title').textContent = venue.name;
   fillMonthSel(); renderSummary();
   renderFloor($('floor'), venue, objList(), {mode:'owner', editing});
+  if(zoomFor !== V + ':' + venue.widthM + 'x' + venue.lengthM){ zoomFor = V + ':' + venue.widthM + 'x' + venue.lengthM; requestAnimationFrame(restoreZoom); } else applyZoom(zoom);
   $('scaleNote').textContent = `場地 ${r2(venue.widthM)} m（寬）× ${r2(venue.lengthM)} m（長），共 ${machines().length} 台娃娃機・${CFG.VERSION}`;
 }
 function monthStats(y, m){
@@ -472,33 +479,101 @@ function blocked(r, selfId, type){
   for(const o of objList()) if(o.id!==selfId && !isArea(o.type) && rectsOverlap(r,o)) return '與其他物件重疊';
   return null;
 }
-let drag = null;
-$('floor').addEventListener('pointerdown', e=>{
-  const el = e.target.closest('.ob'); if(!el) return;
-  const id = el.dataset.id, o = objs[id];
-  drag = {id, el, sx:e.clientX, sy:e.clientY, moved:false, o, ppm: $('floor').clientWidth / venue.widthM};
-  if(editing){ el.setPointerCapture(e.pointerId); e.preventDefault(); }
+/* ---------- 縮放（－／＋／全圖、雙指縮放、拖曳平移）---------- */
+// zoom = 平面圖寬度 ÷ 視窗寬度；最小＝整張圖放得進可見區域（寬與高），最大≈螢幕寬容納 3 台標準機台（0.8 m）
+let zoom = 1, zoomFit = true;   // zoomFit：維持「全圖」直到使用者自行縮放
+const fwrap = () => $('fwrap'), FL = () => $('floor');
+const wrapMaxH = () => Math.max(240, window.innerHeight - (document.getElementById('hdr').offsetHeight||56) - ($('btnEditLayout').closest('.toolbar').offsetHeight||44) - 28);   // 可見區域：扣掉頂部列與工具列
+function zoomLimits(){
+  const W = venue.widthM, L = venue.lengthM, ww = fwrap().clientWidth || 400;
+  const zFit = Math.min(1, wrapMaxH() / (ww * L / W));
+  const zMax = Math.max(zFit, W / (3 * 0.8));
+  return {zFit, zMax};
+}
+function applyZoom(z, ax, ay, user){   // ax, ay：錨點（client 座標），縮放時保持此點不動；user＝使用者操作（會記住）
+  if(!venue) return;
+  const {zFit, zMax} = zoomLimits();
+  if(user) zoomFit = false;
+  z = zoomFit ? zFit : Math.min(zMax, Math.max(zFit, z));
+  if(user && z <= zFit + 1e-6) zoomFit = true;
+  const w = fwrap(), r = w.getBoundingClientRect(), f = FL();
+  if(ax==null){ ax = r.left + w.clientWidth/2; ay = r.top + w.clientHeight/2; }
+  const oldW = f.offsetWidth || 1, oldH = f.offsetHeight || 1;
+  const fx = (w.scrollLeft + ax - r.left - f.offsetLeft) / oldW, fy = (w.scrollTop + ay - r.top - f.offsetTop) / oldH;
+  zoom = z;
+  const nw = w.clientWidth * z;
+  f.style.width = nw + 'px';
+  w.style.height = Math.min(wrapMaxH(), nw * venue.lengthM / venue.widthM + 4) + 'px';
+  w.scrollLeft = fx * f.offsetWidth + f.offsetLeft - (ax - r.left);
+  w.scrollTop  = fy * f.offsetHeight + f.offsetTop - (ay - r.top);
+  $('zoomPct').textContent = Math.round(z * 100) + '%';
+  $('btnZoomOut').disabled = z <= zFit + 1e-6; $('btnZoomIn').disabled = z >= zMax - 1e-6;
+  if(V && user) localStorage.setItem('claw2.zoom.' + V, zoomFit ? 'fit' : String(r2(z)));
+}
+function restoreZoom(){ const v = localStorage.getItem('claw2.zoom.' + V), z = +v; zoomFit = !(v && v!=='fit' && Number.isFinite(z) && z > 0); applyZoom(zoomFit ? 0 : z); }
+$('btnZoomIn').onclick = ()=> applyZoom(zoom * 1.25, null, null, true);
+$('btnZoomOut').onclick = ()=> applyZoom(zoom / 1.25, null, null, true);
+$('btnZoomFit').onclick = ()=> applyZoom(0, null, null, true);
+window.addEventListener('resize', ()=>{ if(venue && ROLE==='owner') applyZoom(zoom); });
+$('fwrap').addEventListener('wheel', e=>{ if(e.ctrlKey){ e.preventDefault(); applyZoom(zoom * Math.exp(-e.deltaY/200), e.clientX, e.clientY, true); } }, {passive:false});
+
+/* ---------- 物件點擊／拖曳＋平移／雙指 ---------- */
+let drag = null, pan = null;
+const ptrs = new Map(); let pinch = null;
+const mid = () => { const [a,b] = [...ptrs.values()]; return {x:(a.x+b.x)/2, y:(a.y+b.y)/2, d:Math.hypot(a.x-b.x, a.y-b.y)}; };
+$('fwrap').addEventListener('pointerdown', e=>{
+  ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  try{ $('fwrap').setPointerCapture(e.pointerId); }catch(_){}
+  if(ptrs.size === 2){   // 兩指：取消拖曳物件，開始縮放／平移
+    if(drag && drag.moved) renderOwner();
+    drag = null; pan = null; const m = mid(); pinch = {d0:m.d, z0:zoom, x:m.x, y:m.y}; return;
+  }
+  if(ptrs.size > 2) return;
+  const el = e.target.closest('.ob');
+  if(el && editing){ const id = el.dataset.id; drag = {id, el, sx:e.clientX, sy:e.clientY, moved:false, o:objs[id], ppm: FL().clientWidth / venue.widthM}; e.preventDefault(); }
+  else { pan = {sx:e.clientX, sy:e.clientY, sl:$('fwrap').scrollLeft, st:$('fwrap').scrollTop, moved:false, tapId: el ? el.dataset.id : null}; }
 });
-$('floor').addEventListener('pointermove', e=>{
-  if(!drag || !editing) return;
+$('fwrap').addEventListener('pointermove', e=>{
+  if(!ptrs.has(e.pointerId)) return;
+  ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if(pinch && ptrs.size >= 2){
+    const m = mid(), w = $('fwrap');
+    applyZoom(pinch.z0 * m.d / Math.max(1, pinch.d0), m.x, m.y, true);
+    w.scrollLeft -= m.x - pinch.x; w.scrollTop -= m.y - pinch.y; pinch.x = m.x; pinch.y = m.y; return;
+  }
+  if(pan){
+    const dx = e.clientX - pan.sx, dy = e.clientY - pan.sy;
+    if(!pan.moved && Math.hypot(dx,dy) < 6) return;
+    pan.moved = true; const w = $('fwrap');
+    const canX = w.scrollWidth > w.clientWidth + 1, canY = w.scrollHeight > w.clientHeight + 1;
+    if(!canX && !canY){ window.scrollBy(0, -(e.clientY - (pan.ly ?? pan.sy))); pan.ly = e.clientY; return; }  // 沒放大：讓頁面捲動
+    w.scrollLeft = pan.sl - dx; w.scrollTop = pan.st - dy; return;
+  }
+  if(!drag) return;
   const dx = e.clientX-drag.sx, dy = e.clientY-drag.sy;
   if(!drag.moved && Math.hypot(dx,dy) < 6) return;
   drag.moved = true; drag.el.classList.add('drag');
-  const nx = snap(drag.o.x + dx/drag.ppm), ny = snap(drag.o.y + dy/drag.ppm);
+  const nx = snap(drag.o.x + dx/drag.ppm), ny = snap(drag.o.y + dy/drag.ppm);   // 螢幕位移 ÷（目前縮放的像素/公尺）
   drag.nx = nx; drag.ny = ny;
   drag.el.style.left = nx/venue.widthM*100+'%'; drag.el.style.top = ny/venue.lengthM*100+'%';
   drag.el.classList.toggle('bad', !!blocked({x:nx,y:ny,w:drag.o.w,h:drag.o.h}, drag.id, drag.o.type));
 });
-$('floor').addEventListener('pointerup', async e=>{
+async function ptrEnd(e, cancel){
+  ptrs.delete(e.pointerId);
+  if(pinch){ if(ptrs.size < 2) pinch = null; return; }
+  const p = pan; pan = null;
+  if(p){ if(!p.moved && !cancel && p.tapId) openObj(p.tapId); return; }
   const d = drag; drag = null; if(!d) return;
+  if(cancel){ renderOwner(); return; }
   if(!d.moved){ openObj(d.id); return; }
   const r = {x:d.nx, y:d.ny, w:d.o.w, h:d.o.h}, why = blocked(r, d.id, d.o.type);
   if(why){ toast(why + '，已復原'); renderOwner(); return; }
   objs[d.id] = {...d.o, x:r.x, y:r.y}; renderOwner();
   try{ await F.setDoc(D('venues',V,'objects',d.id), {x:r.x, y:r.y}, {merge:true}); }catch(err){ toast('儲存位置失敗：'+err.code); }
-});
-$('floor').addEventListener('pointercancel', ()=>{ drag=null; renderOwner(); });
-$('btnEditLayout').onclick = ()=>{ editing = !editing; $('btnEditLayout').textContent = editing ? '完成佈局' : '編輯佈局'; $('btnAdd').style.display = editing?'':'none'; $('layoutHint').style.display = editing?'':'none'; $('floor').style.touchAction = editing ? 'none' : 'pan-y'; renderOwner(); };
+}
+$('fwrap').addEventListener('pointerup', e=> ptrEnd(e, false));
+$('fwrap').addEventListener('pointercancel', e=> ptrEnd(e, true));
+$('btnEditLayout').onclick = ()=>{ editing = !editing; $('btnEditLayout').textContent = editing ? '完成佈局' : '編輯佈局'; $('btnAdd').style.display = editing?'':'none'; $('layoutHint').style.display = editing?'':'none'; renderOwner(); };
 
 /* ---------- 新增物件 ---------- */
 let addSize = '中';
