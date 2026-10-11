@@ -238,7 +238,7 @@ const CFG = {
   APPLE_ENABLED: false,        // 需要 Apple Developer 帳號＋Firebase 啟用 Apple 供應商後才改成 true
   EMAIL_LOGIN_ENABLED: false,  // App 審核用示範帳號（需在 Firebase 啟用「電子郵件/密碼」）
   LEGACY_OWNER_EMAILS: ["qew59601211@gmail.com"],
-  VERSION: "v2-2026-10-11h",
+  VERSION: "v2-2026-10-11i",
 };
 const QS = new URLSearchParams(location.search);
 const EMU = QS.has('emu');
@@ -350,7 +350,7 @@ A.onAuthStateChanged(auth, async user=>{
   if(isLegacyOwner()){
     if(!saved && !pickedRole) pickedRole = 'owner';   // 舊版場主帳號：預設為場主
     if(udoc.legacyMigrated !== true){ await runLegacyImport(true); }
-    else if(udoc.sizeFixV1 !== true){ await legacySizeFix(); }
+    else { if(udoc.sizeFixV1 !== true) await legacySizeFix(); if(udoc.sizeFixV2 !== true) await legacySizeFix2(); }
   }
   if(pickedRole){ await setRole(pickedRole); pickedRole = null; }
   else if(saved) ROLE = saved;
@@ -934,7 +934,42 @@ function convertLegacy(build, d){
     privs['m'+i] = p;
   }
   statics.forEach((s,j)=> objects['s'+j] = {type:s.type, x:r2(s.x*k), y:r2(s.y*k*LEGACY_FY), w:r2(s.w*k), h:r2(s.h*k*LEGACY_FY), label:s.label ?? TYPES[s.type].label});
-  return {objects, privs, widthM:r2(B.W*k), lengthM:r2(maxY*k*LEGACY_FY), floor:B.floor};
+  const res = {objects, privs, widthM:r2(B.W*k), lengthM:r2(maxY*k*LEGACY_FY), floor:B.floor};
+  if(build===legacyMain) applyNamedSizes(objects, res.widthM, res.lengthM);
+  return res;
+}
+// 來都來了：#66＝中型、#666＝巨無霸（依機台編號；只處理仍是匯入時的自訂尺寸、未被使用者改過的）
+const NAMED_SIZES = {'66':'大','666':'特大'};
+const ovl = (a,b) => a.x < b.x+b.w-1e-3 && b.x < a.x+a.w-1e-3 && a.y < b.y+b.h-1e-3 && b.y < a.y+a.h-1e-3;
+function fitPlace(o, others, W, L){   // 回傳不重疊、最接近原位（右下角對齊）的位置
+  const ax = o.x0+o.w0-o.w, ay = o.y0, c = [];
+  for(let dx=-30; dx<=30; dx++) for(let dy=-30; dy<=30; dy++) c.push([dx,dy]);
+  c.sort((a,b)=>Math.hypot(...a)-Math.hypot(...b));
+  for(const [dx,dy] of c){ const x=r2(ax+dx/100), y=r2(ay+dy/100); if(x<0||y<0||x+o.w>W+1e-3||y+o.h>L+1e-3) continue;
+    if(!others.some(b=>ovl({x,y,w:o.w,h:o.h},b))) return {x,y}; }
+  return {x:r2(Math.max(0,Math.min(ax,W-o.w))), y:ay};
+}
+function applyNamedSizes(objects, W, L){   // objects：{id: obj}；回傳 {id: patch}
+  const patches = {};
+  for(const [id,o] of Object.entries(objects)){
+    const sz = NAMED_SIZES[String(o.no)]; if(o.type!=='machine' || !sz || (o.size && SIZES[o.size])) continue;   // 已選過正式尺寸 → 不動
+    const n = {w0:+o.w, h0:+o.h, x0:+o.x, y0:+o.y, w:SIZES[sz].w, h:SIZES[sz].h};
+    const others = Object.entries(objects).filter(([k,b])=>k!==id && !['indoor','outdoor'].includes(b.type)).map(([,b])=>b);
+    const pos = fitPlace(n, others, W, L), pa = {size:sz, w:n.w, h:n.h, ...pos};
+    Object.assign(o, pa); patches[id] = pa;
+  }
+  return patches;
+}
+async function legacySizeFix2(){
+  try{
+    const vid = `${U.uid}-legacy-main`, vs = await F.getDoc(D('venues',vid));
+    if(vs.exists()){
+      const os = await F.getDocs(C('venues',vid,'objects')), objs = {}; os.docs.forEach(x=> objs[x.id] = x.data());
+      const pt = applyNamedSizes(objs, +vs.data().widthM||99, +vs.data().lengthM||99);
+      if(Object.keys(pt).length) await commitChunks(Object.entries(pt).map(([id,pa])=>b=>b.set(D('venues',vid,'objects',id), pa, {merge:true})));
+    }
+    await F.setDoc(D('users',U.uid), {sizeFixV2:true, sizeFixV2At:ts()}, {merge:true});
+  }catch(e){ console.error(e); toast('尺寸更新失敗：'+(e.code||e.message), 6000); }
 }
 // 一次性修正：已匯入的舊版場地，把 0.8×0.8 的機台改為標準台 0.802×0.87（只動尺寸，並縱向等比拉開位置避免重疊；不碰租金／營收等資料）
 async function legacySizeFix(){
@@ -979,7 +1014,7 @@ async function runLegacyImport(auto){
       ops2.push(b=>b.set(D('venues',vid,'finance','shop'), {shopExpenses:d.shopExpenses||{}}));
       await commitChunks(ops2);
     }
-    await F.setDoc(D('users',U.uid), {legacyMigrated:true, legacyMigratedAt:ts(), sizeFixV1:true}, {merge:true});
+    await F.setDoc(D('users',U.uid), {legacyMigrated:true, legacyMigratedAt:ts(), sizeFixV1:true, sizeFixV2:true}, {merge:true});
     toast(auto ? '已匯入你之前的場地資料' : '✅ 舊版資料已匯入（舊資料保留未動）', 4000);
     V = null; if(auto) localStorage.setItem('claw2.venue.'+U.uid, `${U.uid}-legacy-main`);
     return true;
