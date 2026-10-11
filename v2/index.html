@@ -88,7 +88,7 @@ dialog h2{margin:0 0 6px;font-size:18px}
 .mtab input{padding:4px 6px}
 .pick{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .pick button{padding:12px 4px}
-.sizes{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+.sizes{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
 .sizes button.on{background:var(--accent);border-color:var(--accent)}
 #toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 20px);transform:translateX(-50%);background:#000;border:1px solid var(--line);color:#fff;padding:10px 16px;border-radius:10px;z-index:99;display:none;max-width:90vw}
 .tm{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
@@ -238,12 +238,16 @@ const CFG = {
   APPLE_ENABLED: false,        // 需要 Apple Developer 帳號＋Firebase 啟用 Apple 供應商後才改成 true
   EMAIL_LOGIN_ENABLED: false,  // App 審核用示範帳號（需在 Firebase 啟用「電子郵件/密碼」）
   LEGACY_OWNER_EMAILS: ["qew59601211@gmail.com"],
-  VERSION: "v2-2026-10-11g",
+  VERSION: "v2-2026-10-11h",
 };
 const QS = new URLSearchParams(location.search);
 const EMU = QS.has('emu');
 /* 尺寸表（公尺，正方形佔地）*/
-const SIZES = {'小':0.6,'中':0.8,'大':1.0,'特大':1.2,'超大':1.5};
+// 機台實際佔地（寬×深，公尺；不計高度），依飛絡力規格
+const SIZES = {'迷你':{w:0.30,h:0.43,name:'迷你 F12A/C'},'小':{w:0.605,h:0.86,name:'迷你 F12D'},'中':{w:0.802,h:0.87,name:'標準台'},'大':{w:1.00,h:1.085,name:'中型'},'特大':{w:1.14,h:1.15,name:'巨無霸'},'超大':{w:1.26,h:1.485,name:'金剛K爪'}};
+const sizeCm = k => `${+(SIZES[k].w*100).toFixed(1)}×${+(SIZES[k].h*100).toFixed(1)}`;
+const sizeLabel = k => `${SIZES[k].name} ${sizeCm(k)}`;
+const LEGACY_FY = 0.87/0.8;   // 舊版正方形 0.8m → 標準台 0.802×0.87：縱向等比拉開避免重疊
 const TYPES = {
   machine:{name:'娃娃機'}, exchanger:{name:'兌幣機',w:0.9,h:0.6,label:'兌幣機'}, stairs:{name:'樓梯',w:1.0,h:2.4,label:'樓梯'},
   wall:{name:'柱子／牆',w:0.4,h:0.4,label:''}, counter:{name:'櫃台／電腦',w:0.6,h:0.6,label:'電腦'},
@@ -346,6 +350,7 @@ A.onAuthStateChanged(auth, async user=>{
   if(isLegacyOwner()){
     if(!saved && !pickedRole) pickedRole = 'owner';   // 舊版場主帳號：預設為場主
     if(udoc.legacyMigrated !== true){ await runLegacyImport(true); }
+    else if(udoc.sizeFixV1 !== true){ await legacySizeFix(); }
   }
   if(pickedRole){ await setRole(pickedRole); pickedRole = null; }
   else if(saved) ROLE = saved;
@@ -583,8 +588,8 @@ $('btnEditLayout').onclick = ()=>{ editing = !editing; $('btnEditLayout').textCo
 
 /* ---------- 新增物件 ---------- */
 let addSize = '中';
-$('sizeTable').innerHTML = '尺寸表（佔地，公尺）：' + Object.entries(SIZES).map(([k,v])=>`${k} ${v}×${v}`).join('、') + '<br>其他：' + Object.entries(TYPES).filter(([k])=>k!=='machine').map(([k,t])=>`${t.name} ${t.w}×${t.h}`).join('、') + '（可在物件設定改尺寸）';
-function renderAddSizes(){ $('addSizes').innerHTML = Object.keys(SIZES).map(k=>`<button data-s="${k}" class="${k===addSize?'on':''}">${k}<br><span class="muted">${SIZES[k]}m</span></button>`).join(''); $('addSizes').querySelectorAll('button').forEach(b=> b.onclick=()=>{ addSize=b.dataset.s; renderAddSizes(); }); }
+$('sizeTable').innerHTML = '機台尺寸（寬×深，公分）：' + Object.keys(SIZES).map(sizeLabel).join('、') + '<br>其他：' + Object.entries(TYPES).filter(([k])=>k!=='machine').map(([k,t])=>`${t.name} ${t.w}×${t.h}`).join('、') + '（可在物件設定改尺寸）';
+function renderAddSizes(){ $('addSizes').innerHTML = Object.keys(SIZES).map(k=>`<button data-s="${k}" class="${k===addSize?'on':''}">${SIZES[k].name}<br><span class="muted">${sizeCm(k)}</span></button>`).join(''); $('addSizes').querySelectorAll('button').forEach(b=> b.onclick=()=>{ addSize=b.dataset.s; renderAddSizes(); }); }
 renderAddSizes();
 $('addOthers').innerHTML = Object.entries(TYPES).filter(([k])=>k!=='machine').map(([k,t])=>`<button data-t="${k}">${t.name}</button>`).join('');
 $('btnAdd').onclick = ()=> $('dlgAdd').showModal();
@@ -594,7 +599,7 @@ function freeSpot(w,h,type){
   return null;
 }
 async function addObject(type, size){
-  const t = TYPES[type]; const w = type==='machine' ? SIZES[size] : t.w, h = type==='machine' ? SIZES[size] : t.h;
+  const t = TYPES[type]; const w = type==='machine' ? SIZES[size].w : t.w, h = type==='machine' ? SIZES[size].h : t.h;
   const p = freeSpot(w,h,type); if(!p){ toast('場地沒有足夠空位，請先調整其他物件或場地尺寸'); return; }
   const ref = F.doc(C('venues',V,'objects'));
   const o = {type, x:p.x, y:p.y, w, h, createdAt:ts()};
@@ -632,7 +637,7 @@ function openObj(id){
   p.rentPaid ||= {}; p.revenueByMonth ||= {}; p.costByMonth ||= {};
   edYear = viewY; edMonSel = viewM; edExpand = false;
   const ln = links[id];
-  const sizeOpts = Object.keys(SIZES).map(k=>`<option ${o.size===k?'selected':''}>${k}</option>`).join('') + (SIZES[o.size] ? '' : `<option value="" selected>自訂 ${r2(o.w)}×${r2(o.h)} m</option>`);
+  const sizeOpts = Object.keys(SIZES).map(k=>`<option value="${k}" ${o.size===k?'selected':''}>${sizeLabel(k)}</option>`).join('') + (SIZES[o.size] ? '' : `<option value="" selected>自訂 ${r2(o.w)}×${r2(o.h)} m</option>`);
   f.innerHTML = `<h2>機台 ${esc(o.no)}</h2>
     <div class="row"><div><label>編號</label><input name="no" value="${esc(o.no)}" maxlength="10"></div>
     <div><label>狀態</label><select name="status">${STATUSES.map(s=>`<option ${o.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
@@ -676,7 +681,7 @@ function openObj(id){
     syncMoney();
     const E = f.elements, size = E.size.value;
     const op = {no:E.no.value.trim(), status:E.status.value};
-    if(size && SIZES[size] && size!==o.size){ const w=SIZES[size]; const why = blocked({x:o.x,y:o.y,w,h:w}, id, 'machine'); if(why) toast('尺寸變更後'+why+'，尺寸未變更'); else Object.assign(op,{size,w,h:w}); }
+    if(size && SIZES[size] && size!==o.size){ const w=SIZES[size].w, h=SIZES[size].h; const why = blocked({x:o.x,y:o.y,w,h}, id, 'machine'); if(why) toast('尺寸變更後'+why+'，尺寸未變更'); else Object.assign(op,{size,w,h}); }
     const np = {owner:E.owner.value.trim(), rent:E.rent.value.trim(), selfManaged:E.selfManaged.checked, notes:E.notes.value.trim(), rentPaid:p.rentPaid, revenueByMonth:p.revenueByMonth, costByMonth:p.costByMonth, updatedAt:ts()};
     const b = F.writeBatch(db);
     b.set(D('venues',V,'objects',id), op, {merge:true});
@@ -920,15 +925,36 @@ function convertLegacy(build, d){
     maxY = Math.max(maxY, sl.y+sl.h+6);
     const m = md[String(i)] || md[i] || {};
     let status = String(m.status||'營運中'); if(status==='閒置') status='待承租';
-    const w = r2(sl.w*k), size = Object.entries(SIZES).find(([,v])=>Math.abs(v-w)<0.02)?.[0] || '';
-    objects['m'+i] = {type:'machine', x:r2(sl.x*k), y:r2(sl.y*k), w, h:r2(sl.h*k), size, no:String(m.no ?? sl.no ?? (i+1)), status, legacyIndex:i};
+    const std = Math.abs(sl.w*k-0.8)<0.02 && Math.abs(sl.h*k-0.8)<0.02;   // 舊版一般機台 → 標準台；其他（大台）保持原尺寸
+    const w = std ? SIZES['中'].w : r2(sl.w*k), h = std ? SIZES['中'].h : r2(sl.h*k), size = std ? '中' : '';
+    objects['m'+i] = {type:'machine', x:Math.max(0,Math.floor(Math.min(sl.x*k, r2(B.W*k) - w)*100+1e-6)/100), y:r2(sl.y*k*LEGACY_FY), w, h, size, no:String(m.no ?? sl.no ?? (i+1)), status, legacyIndex:i};
     const p = {owner:String(m.owner??''), rent:String(m.rent??''), selfManaged:m.selfManaged===true, notes:'', rentPaid:cleanRP(m.rentPaid), revenueByMonth:cleanMM(m.revenueByMonth), costByMonth:cleanMM(m.costByMonth)};
     for(const [old,key] of [['revenue','revenueByMonth'],['cost','costByMonth']]){ const v = m[old]==null?'':String(m[old]).trim(); if(v!=='' && !Object.keys(p[key]).length){ p[key][CUR_Y]={}; for(let q=1;q<=12;q++) p[key][CUR_Y][q]=''; p[key][CUR_Y][CUR_M]=v; } }
     if(m.paid==='已繳' && !Object.keys(p.rentPaid).length){ p.rentPaid[CUR_Y]={}; for(let q=1;q<=12;q++) p.rentPaid[CUR_Y][q]=false; p.rentPaid[CUR_Y][CUR_M]=true; }
     privs['m'+i] = p;
   }
-  statics.forEach((s,j)=> objects['s'+j] = {type:s.type, x:r2(s.x*k), y:r2(s.y*k), w:r2(s.w*k), h:r2(s.h*k), label:s.label ?? TYPES[s.type].label});
-  return {objects, privs, widthM:r2(B.W*k), lengthM:r2(maxY*k), floor:B.floor};
+  statics.forEach((s,j)=> objects['s'+j] = {type:s.type, x:r2(s.x*k), y:r2(s.y*k*LEGACY_FY), w:r2(s.w*k), h:r2(s.h*k*LEGACY_FY), label:s.label ?? TYPES[s.type].label});
+  return {objects, privs, widthM:r2(B.W*k), lengthM:r2(maxY*k*LEGACY_FY), floor:B.floor};
+}
+// 一次性修正：已匯入的舊版場地，把 0.8×0.8 的機台改為標準台 0.802×0.87（只動尺寸，並縱向等比拉開位置避免重疊；不碰租金／營收等資料）
+async function legacySizeFix(){
+  try{
+    for(const key of ['main','venue2']){
+      const vid = `${U.uid}-legacy-${key}`, vs = await F.getDoc(D('venues',vid)); if(!vs.exists()) continue;
+      const os = await F.getDocs(C('venues',vid,'objects'));
+      const isStd = o => o.type==='machine' && Math.abs(o.w-0.8)<0.02 && Math.abs(o.h-0.8)<0.02;
+      if(!os.docs.some(x=>isStd(x.data()))) continue;
+      const ops = [];
+      os.docs.forEach(x=>{ const o = x.data(), pa = {y:r2((+o.y||0)*LEGACY_FY)};
+        if(isStd(o)){ Object.assign(pa, {size:'中', w:SIZES['中'].w, h:SIZES['中'].h}); const VW=+vs.data().widthM||0; if(VW && (+o.x||0)+pa.w>VW) pa.x=Math.max(0,Math.floor((VW-pa.w)*100+1e-6)/100); }
+        else if(o.type!=='machine') pa.h = r2((+o.h||0)*LEGACY_FY);
+        ops.push(b=>b.set(x.ref, pa, {merge:true})); });
+      ops.push(b=>b.set(D('venues',vid), {lengthM:r2((+vs.data().lengthM||0)*LEGACY_FY)}, {merge:true}));
+      await commitChunks(ops);
+    }
+    await F.setDoc(D('users',U.uid), {sizeFixV1:true, sizeFixV1At:ts()}, {merge:true});
+    toast('已將機台更新為實際尺寸（標準台 80×87 公分）', 4000);
+  }catch(e){ console.error(e); toast('尺寸更新失敗：'+(e.code||e.message), 6000); }
 }
 $('btnMigrate').onclick = ()=>{ openMenu(false); runLegacyImport(false); };
 async function runLegacyImport(auto){
@@ -953,7 +979,7 @@ async function runLegacyImport(auto){
       ops2.push(b=>b.set(D('venues',vid,'finance','shop'), {shopExpenses:d.shopExpenses||{}}));
       await commitChunks(ops2);
     }
-    await F.setDoc(D('users',U.uid), {legacyMigrated:true, legacyMigratedAt:ts()}, {merge:true});
+    await F.setDoc(D('users',U.uid), {legacyMigrated:true, legacyMigratedAt:ts(), sizeFixV1:true}, {merge:true});
     toast(auto ? '已匯入你之前的場地資料' : '✅ 舊版資料已匯入（舊資料保留未動）', 4000);
     V = null; if(auto) localStorage.setItem('claw2.venue.'+U.uid, `${U.uid}-legacy-main`);
     return true;
@@ -995,7 +1021,7 @@ function renderTenant(){
   $('tmList').querySelectorAll('[data-link]').forEach(b=> b.onclick=()=> linkDialog(b.dataset.link));
   $('tmList').querySelectorAll('[data-plan]').forEach(b=> b.onclick=()=> showPlan(myLinks.find(l=>l.tenantMachineId===b.dataset.plan)));
 }
-$('fTM').elements.size.innerHTML = '<option value="">—</option>' + Object.keys(SIZES).map(k=>`<option>${k}</option>`).join('');
+$('fTM').elements.size.innerHTML = '<option value="">—</option>' + Object.keys(SIZES).map(k=>`<option value="${k}">${sizeLabel(k)}</option>`).join('');
 $('btnAddTM').onclick = ()=> tmDialog(null);
 function tmDialog(id){
   const f = $('fTM'), m = id ? tms[id] : {};
