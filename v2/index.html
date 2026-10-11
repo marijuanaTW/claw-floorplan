@@ -61,6 +61,7 @@ header h1{font-size:17px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text
 .ob{position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;overflow:hidden;line-height:1.1;cursor:pointer}
 .ob.machine{background:#f8fafc;color:#111;border:2px solid #cbd5e1;border-radius:6%;z-index:3}
 .ob.machine .no{font-weight:900}
+.ob.machine .helpmk{position:absolute;top:3%;right:4%;background:#f59e0b;color:#111;font-weight:900;border-radius:4px;padding:0 3px;line-height:1.15}
 .ob.machine .own{max-width:96%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#374151}
 .ob.machine .tag{white-space:nowrap;display:inline-block;border-radius:4px;padding:0 4%;margin-top:6%;color:#fff;font-weight:800}
 .tag.paid{background:var(--ok)}.tag.unpaid{background:var(--bad)}.tag.self{background:#0891b2}
@@ -246,7 +247,7 @@ const CFG = {
   APPLE_ENABLED: false,        // 需要 Apple Developer 帳號＋Firebase 啟用 Apple 供應商後才改成 true
   EMAIL_LOGIN_ENABLED: false,  // App 審核用示範帳號（需在 Firebase 啟用「電子郵件/密碼」）
   LEGACY_OWNER_EMAILS: ["qew59601211@gmail.com"],
-  VERSION: "v2-2026-10-11n",
+  VERSION: "v2-2026-10-12a",
 };
 const QS = new URLSearchParams(location.search);
 const EMU = QS.has('emu');
@@ -275,6 +276,7 @@ let toastT; function toast(t, ms=2500){ const e=$('toast'); e.textContent=t; e.s
 const NOW = new Date(), CUR_Y = NOW.getFullYear(), CUR_M = NOW.getMonth()+1;
 let viewY = CUR_Y, viewM = CUR_M;
 const getMon = (mp,y,m) => (mp && mp[String(y)] && mp[String(y)][String(m)]) ?? '';
+const effRent = p => p && p.helper ? Math.max(0, num(p.rent) - num(p.helperDiscount)) : num(p && p.rent);   // 小幫手：租金 − 減免（最低 0）
 const isPaid = (p,y,m) => !!(p && p.rentPaid && p.rentPaid[String(y)] && p.rentPaid[String(y)][String(m)]);
 function show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('show', s.id===id)); }
 function openMenu(o){ $('menu').classList.toggle('show',o); $('shade').classList.toggle('show',o); }
@@ -395,7 +397,7 @@ function renderFloor(el, venue, objList, opts){
         const p = priv[o.id] || {};
         if(o.status==='維修中') cls += ' st-maint'; else if(o.status==='待承租') cls += ' st-vacant';
         const tag = p.selfManaged ? '<span class="tag self">自管</span>' : (isPaid(p,viewY,viewM) ? '<span class="tag paid">已繳</span>' : '<span class="tag unpaid">未繳</span>');
-        inner = `<span class="no" style="font-size:${fs*.28}cqw">${esc(o.no)}</span><span class="own" style="font-size:${fs*.15}cqw">${esc(p.owner||(o.status==='待承租'?'待承租':''))}${links[o.id]?' 🔗':''}</span><span style="font-size:${fs*.21}cqw">${tag}</span>`;
+        inner = `<span class="no" style="font-size:${fs*.28}cqw">${esc(o.no)}</span><span class="own" style="font-size:${fs*.15}cqw">${esc(p.owner||(o.status==='待承租'?'待承租':''))}${links[o.id]?' 🔗':''}</span>${p.helper&&!p.selfManaged?`<span class="helpmk" style="font-size:${fs*.15}cqw">幫</span>`:''}<span style="font-size:${fs*.21}cqw">${tag}</span>`;
       }
       html.push(`<div class="${cls}" data-id="${o.id}" style="${pos}">${inner}</div>`);
     } else {
@@ -473,7 +475,7 @@ function monthStats(y, m){
     const rev = num(getMon(p.revenueByMonth,y,m)), cost = num(getMon(p.costByMonth,y,m));
     if(p.selfManaged){ selfN++; sRev+=rev; sCost+=cost; continue; }
     tRev+=rev; tCost+=cost;
-    if(isPaid(p,y,m)){ paidN++; collected+=num(p.rent); } else { unpaidN++; owed+=num(p.rent); } }
+    if(isPaid(p,y,m)){ paidN++; collected+=effRent(p); } else { unpaidN++; owed+=effRent(p); } }
   return {paidN, unpaidN, selfN, collected, owed, sRev, sCost, tRev, tCost};
 }
 function renderSummary(){
@@ -679,7 +681,9 @@ function openObj(id){
     <div><label>狀態</label><select name="status">${STATUSES.map(s=>`<option ${o.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
     <div><label>尺寸</label><select name="size">${sizeOpts}</select></div></div>
     <label style="display:flex;gap:8px;align-items:center;color:var(--text);margin-top:10px"><input type="checkbox" name="selfManaged" style="width:20px;height:20px" ${p.selfManaged?'checked':''}> 未承租（自己管理）</label>
+    <label style="display:flex;gap:8px;align-items:center;color:var(--text);margin-top:6px"><input type="checkbox" name="helper" style="width:20px;height:20px" ${p.helper&&!p.selfManaged?'checked':''}> 小幫手</label>
     <div class="row"><div><label>台主名字</label><input name="owner" value="${esc(p.owner||'')}" maxlength="30"></div><div><label>台主月租金</label><input name="rent" type="number" inputmode="numeric" value="${esc(p.rent||'')}"></div></div>
+    <div id="edHelpBox"><label>小幫手優惠減免金額（NT$）</label><input name="helperDiscount" type="number" inputmode="numeric" min="0" value="${esc(p.helperDiscount||'')}"><div class="muted" id="edEff" style="margin-top:4px"></div></div>
     ${ln ? `<div class="card" style="padding:8px">🔗 已連結台主帳號：${esc(ln.tenantName||'')} ${esc(ln.tenantEmail||'')}（台主可看到此機台位置與自己的繳費狀態）<br><button value="unlink" formnovalidate style="margin-top:6px">解除連結</button></div>` : ''}
     <div class="row" style="margin-top:8px;flex-wrap:nowrap"><label style="margin:0;flex:none">年度</label><select id="edY">${[CUR_Y-1,CUR_Y,CUR_Y+1].map(y=>`<option ${y===edYear?'selected':''}>${y}</option>`).join('')}</select></div>
     <label>每月租金繳納（點選切換已繳）</label><div class="chips" id="edChips"></div>
@@ -696,7 +700,7 @@ function openObj(id){
       return `<tr data-m="${m}" style="${edExpand||m===edMonSel?'':'display:none'}"><td>${m}</td><td><input data-k="revenueByMonth|${y}|${m}" type="number" inputmode="numeric" value="${esc(rv)}"></td><td><input data-k="costByMonth|${y}|${m}" type="number" inputmode="numeric" value="${esc(cs)}"></td><td>${rv===''&&cs===''?'':Math.round(num(rv)-num(cs))}</td></tr>`; }).join('');
     const yr = [...Array(12)].reduce((a,_,k)=>a+num(getMon(p.revenueByMonth,y,k+1))-num(getMon(p.costByMonth,y,k+1)),0);
     $('edNet').textContent = `${y} 年機台淨額：${money(yr)}` + (dis ? '（自管：計入每月總淨收入）' : '（台主所有，不計入店面淨收入）');
-    f.elements.rent.disabled = dis;
+    f.elements.rent.disabled = dis; drawHelp();
   };
   f.addEventListener('input', e=>{ if(e.target.closest('#edTab')){ syncMoney(); const y=String(edYear); const yr=[...Array(12)].reduce((a,_,k)=>a+num(getMon(p.revenueByMonth,y,k+1))-num(getMon(p.costByMonth,y,k+1)),0);
     const tr=e.target.closest('tr'); const [a,c]=tr.querySelectorAll('input'); tr.lastElementChild.textContent = (a.value===''&&c.value==='')?'':Math.round(num(a.value)-num(c.value));
@@ -705,7 +709,14 @@ function openObj(id){
   f.querySelector('#edM').onchange = e=>{ edMonSel=+e.target.value; applyMon(); };
   f.querySelector('#edExp').onclick = ()=>{ edExpand=!edExpand; applyMon(); };
   f.querySelector('#edY').onchange = e=>{ syncMoney(); edYear=+e.target.value; drawYear(); };
-  f.elements.selfManaged.onchange = ()=>{ syncMoney(); drawYear(); };
+  function drawHelp(){ const E = f.elements, sm = E.selfManaged.checked;
+    if(sm) E.helper.checked = false;
+    const h = E.helper.checked; $('edHelpBox').style.display = h ? '' : 'none';
+    const r = num(E.rent.value), d = num(E.helperDiscount.value);
+    $('edEff').textContent = h ? `租金 ${r.toLocaleString('zh-TW')} − 小幫手 ${d.toLocaleString('zh-TW')} = ${Math.max(0,r-d).toLocaleString('zh-TW')}` : ''; }
+  f.elements.selfManaged.onchange = ()=>{ if(f.elements.selfManaged.checked) f.elements.helper.checked = false; syncMoney(); drawYear(); };
+  f.elements.helper.onchange = ()=>{ if(f.elements.helper.checked) f.elements.selfManaged.checked = false; syncMoney(); drawYear(); };
+  f.elements.rent.addEventListener('input', drawHelp); f.elements.helperDiscount.addEventListener('input', drawHelp);
   drawYear();
   $('dlgObj').onclose = async ()=>{
     const rv = $('dlgObj').returnValue;
@@ -718,11 +729,11 @@ function openObj(id){
     const E = f.elements, size = E.size.value;
     const op = {no:E.no.value.trim(), status:E.status.value};
     if(size && SIZES[size] && size!==o.size){ const w=SIZES[size].w, h=SIZES[size].h; const why = blocked({x:o.x,y:o.y,w,h}, id, 'machine'); if(why) toast('尺寸變更後'+why+'，尺寸未變更'); else Object.assign(op,{size,w,h}); }
-    const np = {owner:E.owner.value.trim(), rent:E.rent.value.trim(), selfManaged:E.selfManaged.checked, notes:E.notes.value.trim(), rentPaid:p.rentPaid, revenueByMonth:p.revenueByMonth, costByMonth:p.costByMonth, updatedAt:ts()};
+    const np = {owner:E.owner.value.trim(), rent:E.rent.value.trim(), selfManaged:E.selfManaged.checked, helper:!E.selfManaged.checked && E.helper.checked, helperDiscount:E.helperDiscount.value.trim(), notes:E.notes.value.trim(), rentPaid:p.rentPaid, revenueByMonth:p.revenueByMonth, costByMonth:p.costByMonth, updatedAt:ts()};
     const b = F.writeBatch(db);
     b.set(D('venues',V,'objects',id), op, {merge:true});
     b.set(D('venues',V,'private',id), np);
-    if(ln) b.set(D('venues',V,'links',id), {tenantUid:ln.tenantUid, no:op.no, rent:np.selfManaged?'':np.rent, rentPaid:np.rentPaid, venueName:venue.name, updatedAt:ts()}, {merge:true});
+    if(ln) b.set(D('venues',V,'links',id), {tenantUid:ln.tenantUid, no:op.no, rent:np.selfManaged?'':String(effRent(np)), rentPaid:np.rentPaid, venueName:venue.name, updatedAt:ts()}, {merge:true});
     await b.commit().then(()=>toast('已儲存')).catch(e=>toast('儲存失敗：'+e.code, 5000));
   };
   $('dlgObj').returnValue=''; $('dlgObj').showModal();
@@ -885,7 +896,7 @@ async function approve(c, oid){
   if(!oid){ toast('沒有可連結的機台'); return; }
   const o = objs[oid], p = priv[oid] || {};
   const b = F.writeBatch(db);
-  b.set(D('venues',V,'links',oid), {tenantUid:c.tenantUid, tenantMachineId:c.tenantMachineId||'', tenantName:c.tenantName||'', tenantEmail:c.tenantEmail||'', venueId:V, venueName:venue.name, objectId:oid, no:o.no, rent:p.selfManaged?'':(p.rent||''), rentPaid:p.rentPaid||{}, linkedAt:ts()});
+  b.set(D('venues',V,'links',oid), {tenantUid:c.tenantUid, tenantMachineId:c.tenantMachineId||'', tenantName:c.tenantName||'', tenantEmail:c.tenantEmail||'', venueId:V, venueName:venue.name, objectId:oid, no:o.no, rent:p.selfManaged?'':String(effRent(p)), rentPaid:p.rentPaid||{}, linkedAt:ts()});
   b.set(D('venues',V,'members',c.tenantUid), {since:ts()});
   b.update(D('venues',V,'claims',c.id), {status:'approved', objectId:oid, decidedAt:ts()});
   if(!p.owner && c.tenantName) b.set(D('venues',V,'private',oid), {owner:c.tenantName}, {merge:true});
