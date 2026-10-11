@@ -3,7 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>娃娃機台 v2</title>
+<title>二代選物管理系統</title>
+<meta name="apple-mobile-web-app-title" content="二代選物">
+<meta name="application-name" content="二代選物管理系統">
+<link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#111418">
 <link rel="icon" href="../favicon.ico" sizes="any">
 <link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
@@ -104,7 +107,7 @@ dialog h2{margin:0 0 6px;font-size:18px}
 <div id="emuBar" class="emu" style="display:none">測試模式（Firebase 模擬器）— 不會動到正式資料</div>
 <header id="hdr">
   <button id="btnMenu" aria-label="選單">☰</button>
-  <h1 id="title">娃娃機台</h1>
+  <h1 id="title">二代選物管理系統</h1>
   <button id="btnSaveAll" style="display:none">全部儲存</button>
 </header>
 <div id="shade"></div>
@@ -131,7 +134,7 @@ dialog h2{margin:0 0 6px;font-size:18px}
 <!-- 歡迎 -->
 <section class="screen" id="scrWelcome"><div class="center">
   <img src="../icons/icon-192.png" width="88" height="88" alt="" style="border-radius:20px">
-  <h1 style="margin:0">歡迎使用娃娃機台</h1>
+  <h1 style="margin:0">歡迎使用二代選物管理系統</h1>
   <div class="muted">請選擇你的身分</div>
   <button class="big pri" data-role="owner">我是場主</button>
   <button class="big" data-role="tenant">我是台主</button>
@@ -243,7 +246,7 @@ const CFG = {
   APPLE_ENABLED: false,        // 需要 Apple Developer 帳號＋Firebase 啟用 Apple 供應商後才改成 true
   EMAIL_LOGIN_ENABLED: false,  // App 審核用示範帳號（需在 Firebase 啟用「電子郵件/密碼」）
   LEGACY_OWNER_EMAILS: ["qew59601211@gmail.com"],
-  VERSION: "v2-2026-10-11m",
+  VERSION: "v2-2026-10-11n",
 };
 const QS = new URLSearchParams(location.search);
 const EMU = QS.has('emu');
