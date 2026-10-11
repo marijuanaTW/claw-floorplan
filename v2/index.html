@@ -64,6 +64,7 @@ header h1{font-size:17px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text
 .ob.machine.st-vacant{background:#fed7aa;border:3px solid var(--orange)}
 .ob.machine.mine{background:#fde047;border:3px solid #ca8a04}
 .ob.machine.other{background:#cbd5e1;border-color:#94a3b8;cursor:default}
+.ob.exchanger .exlast{display:block;font-weight:600;line-height:1.1;text-align:center;word-break:break-all;opacity:.95;margin-top:1px}
 .ob.exchanger{background:#d21f1f;color:#fff;font-weight:800;border-radius:6px;z-index:3}
 .ob.stairs{background:#ecebe6 repeating-linear-gradient(var(--dir,180deg),transparent 0 9px,#666 9px 10px);color:#d21f1f;font-weight:800;border:2px solid #111;z-index:2}
 .ob.stairs span{background:#ecebe6;padding:0 3px}
@@ -187,7 +188,7 @@ dialog h2{margin:0 0 6px;font-size:18px}
 <!-- 對話框：機台／物件 -->
 <dialog id="dlgObj"><form method="dialog" id="fObj"></form></dialog>
 <!-- 對話框：兌幣機設定／補幣紀錄 -->
-<dialog id="dlgEx"><div id="exBody"></div></dialog>
+<dialog id="dlgEx" autofocus tabindex="-1"><div id="exBody"></div></dialog>
 <!-- 對話框：新增物件 -->
 <dialog id="dlgAdd"><h2>新增物件</h2>
   <label>娃娃機尺寸</label><div class="sizes" id="addSizes"></div>
@@ -238,7 +239,7 @@ const CFG = {
   APPLE_ENABLED: false,        // 需要 Apple Developer 帳號＋Firebase 啟用 Apple 供應商後才改成 true
   EMAIL_LOGIN_ENABLED: false,  // App 審核用示範帳號（需在 Firebase 啟用「電子郵件/密碼」）
   LEGACY_OWNER_EMAILS: ["qew59601211@gmail.com"],
-  VERSION: "v2-2026-10-11i",
+  VERSION: "v2-2026-10-11j",
 };
 const QS = new URLSearchParams(location.search);
 const EMU = QS.has('emu');
@@ -394,7 +395,9 @@ function renderFloor(el, venue, objList, opts){
       const lab = esc(o.label ?? TYPES[o.type]?.label ?? '');
       const f = isArea(o.type) ? Math.min(4.5, fs*.25) : fs*.24;
       const extra = o.type==='stairs' ? `--dir:${o.w>o.h?'90deg':'180deg'};` : '';
-      const inner = o.type==='stairs' ? `<span style="font-size:${f}cqw">${lab}</span>` : `<span style="font-size:${f}cqw">${lab}</span>`;
+      const lr = o.type==='exchanger' && opts.mode!=='tenant' ? exLatest[o.id] : null;
+      const lrTxt = lr ? (d=>`${d.getMonth()+1}/${d.getDate()} 補${money(num(lr.amount)).replace('NT','')}`)(new Date(lr.at)) : '';
+      const inner = `<span style="font-size:${f}cqw">${lab}</span>` + (lrTxt ? `<span class="exlast" style="font-size:${Math.max(fs*.13, 1.6)}cqw">${esc(lrTxt)}</span>` : '');
       html.push(`<div class="ob ${o.type}${opts.mode==='tenant'?' readonly':''}" data-id="${o.id}" style="${pos}${extra}">${inner}</div>`);
     }
   }
@@ -402,6 +405,7 @@ function renderFloor(el, venue, objList, opts){
 }
 
 /* ============================== 場主 ============================== */
+let exLatest = {};   // 兌幣機 id → 最新一筆補幣 {at, amount}
 let venues = [], V = null, venue = null, objs = {}, priv = {}, shop = {}, links = {}, claims = [], vUnsubs = [], editing = false;
 const objList = () => Object.entries(objs).map(([id,o])=>({id,...o})).sort((a,b)=> (isArea(b.type)-isArea(a.type)));
 const machines = () => objList().filter(o=>o.type==='machine');
@@ -433,6 +437,8 @@ function selectVenue(id){
   vUnsubs.push(F.onSnapshot(C('venues',id,'objects'), s=>{ objs = Object.fromEntries(s.docs.map(d=>[d.id,d.data()])); renderOwner(); }, err('物件')));
   vUnsubs.push(F.onSnapshot(C('venues',id,'private'), s=>{ priv = Object.fromEntries(s.docs.map(d=>[d.id,d.data()])); renderOwner(); }, err('機台資料')));
   vUnsubs.push(F.onSnapshot(D('venues',id,'finance','shop'), s=>{ shop = (s.exists() && s.data().shopExpenses) || {}; renderSummary(); }, err('收支')));
+  exLatest = {};
+  vUnsubs.push(F.onSnapshot(C('venues',id,'finance'), s=>{ const m = {}; s.docs.forEach(d=>{ if(!d.id.startsWith('refill_')) return; const es = Object.values(d.data().entries||{}).filter(e=>e && Number.isFinite(e.at)); if(es.length) m[d.id.slice(7)] = es.reduce((a,b)=> b.at > a.at ? b : a); }); exLatest = m; renderOwner(); }, e=>console.warn('補幣摘要', e.code)));
   vUnsubs.push(F.onSnapshot(C('venues',id,'links'), s=>{ links = Object.fromEntries(s.docs.map(d=>[d.id,d.data()])); renderOwner(); }, err('連結')));
   vUnsubs.push(F.onSnapshot(F.query(C('venues',id,'claims'), F.where('status','==','pending')), s=>{ claims = s.docs.map(d=>({id:d.id,...d.data()})); renderClaims(); }, err('申請')));
 }
@@ -705,8 +711,8 @@ function openExchanger(id){
   exId = id; exView = 'log'; exEditKey = null; exEntries = {}; exWeekEnd = dayStart(new Date());
   if(exUnsub) exUnsub();
   exUnsub = F.onSnapshot(exRef(id), s=>{ exEntries = (s.exists() && s.data().entries) || {}; renderEx(); }, e=> toast('讀取補幣紀錄失敗：'+e.code, 5000));
-  $('dlgEx').onclose = ()=>{ if(exUnsub){ exUnsub(); exUnsub = null; } exId = null; };
-  renderEx(); $('dlgEx').showModal();
+  $('dlgEx').onclose = ()=>{ if(exUnsub){ exUnsub(); exUnsub = null; } exId = null; renderOwner(); };
+  renderEx(); $('dlgEx').showModal(); const ae = document.activeElement; if(ae && ae.tagName==='INPUT') ae.blur();   // 不自動跳出鍵盤
 }
 const exList = () => Object.entries(exEntries).map(([k,e])=>({k, ...e})).filter(e=>Number.isFinite(e.at)).sort((a,b)=> b.at - a.at);
 function renderEx(){
