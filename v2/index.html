@@ -248,7 +248,7 @@ const CFG = {
   APPLE_ENABLED: false,        // 需要 Apple Developer 帳號＋Firebase 啟用 Apple 供應商後才改成 true
   EMAIL_LOGIN_ENABLED: false,  // App 審核用示範帳號（需在 Firebase 啟用「電子郵件/密碼」）
   LEGACY_OWNER_EMAILS: ["qew59601211@gmail.com"],
-  VERSION: "v2-2026-10-12b",
+  VERSION: "v2-2026-10-12c",
 };
 const QS = new URLSearchParams(location.search);
 const EMU = QS.has('emu');
@@ -277,7 +277,7 @@ let toastT; function toast(t, ms=2500){ const e=$('toast'); e.textContent=t; e.s
 const NOW = new Date(), CUR_Y = NOW.getFullYear(), CUR_M = NOW.getMonth()+1;
 let viewY = CUR_Y, viewM = CUR_M;
 const getMon = (mp,y,m) => (mp && mp[String(y)] && mp[String(y)][String(m)]) ?? '';
-const effRent = p => p && p.helper ? Math.max(0, num(p.rent) - num(p.helperDiscount)) : num(p && p.rent);   // 小幫手：租金 − 減免（最低 0）
+const effRent = (p, isPC) => p && p.helper && !isPC ? Math.max(0, num(p.rent) - num(p.helperDiscount)) : num(p && p.rent);   // 小幫手：租金 − 減免（最低 0）
 const isPaid = (p,y,m) => !!(p && p.rentPaid && p.rentPaid[String(y)] && p.rentPaid[String(y)][String(m)]);
 function show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('show', s.id===id)); }
 function openMenu(o){ $('menu').classList.toggle('show',o); $('shade').classList.toggle('show',o); }
@@ -408,7 +408,7 @@ function renderFloor(el, venue, objList, opts){
       const lr = o.type==='exchanger' && opts.mode!=='tenant' ? exLatest[o.id] : null;
       const lrD = lr ? new Date(lr.at) : null, lrTxt = lr ? `${lrD.getMonth()+1}/${lrD.getDate()}` : '', lrAmt = lr ? '補' + money(num(lr.amount)).replace('NT','') : '';
       const cp = o.type==='counter' && opts.mode!=='tenant' ? priv[o.id] : null, cRented = cp && (num(cp.rent)>0 || (cp.owner||'').trim());
-      const cTag = cRented ? `<span class="own" style="font-size:${fs*.13}cqw;display:block">${esc(cp.owner||'')}${cp.helper?' 幫':''}</span><span style="font-size:${fs*.17}cqw">${isPaid(cp,viewY,viewM)?'<span class="tag paid">已繳</span>':'<span class="tag unpaid">未繳</span>'}</span>` : '';
+      const cTag = cRented ? `<span class="own" style="font-size:${fs*.13}cqw;display:block">${esc(cp.owner||'')}</span><span style="font-size:${fs*.17}cqw">${isPaid(cp,viewY,viewM)?'<span class="tag paid">已繳</span>':'<span class="tag unpaid">未繳</span>'}</span>` : '';
       const inner = cTag ? `<span style="font-size:${f*.8}cqw">${lab}</span>${cTag}` : `<span style="font-size:${lrTxt ? fs*.19 : f}cqw">${lab}</span>` + (lrTxt ? `<span class="exlast" style="font-size:${fs*.17}cqw">${esc(lrTxt)}<br>${esc(lrAmt)}</span>` : '');
       const exCls = lrTxt ? ' has-last' : '';
       html.push(`<div class="ob ${o.type}${o.type==='exchanger'?exCls:''}${opts.mode==='tenant'?' readonly':''}" data-id="${o.id}" style="${pos}${extra}">${inner}</div>`);
@@ -479,7 +479,7 @@ function monthStats(y, m){
     const rev = num(getMon(p.revenueByMonth,y,m)), cost = num(getMon(p.costByMonth,y,m));
     if(p.selfManaged){ selfN++; sRev+=rev; sCost+=cost; continue; }
     tRev+=rev; tCost+=cost;
-    if(isPaid(p,y,m)){ paidN++; collected+=effRent(p); } else { unpaidN++; owed+=effRent(p); } }
+    if(isPaid(p,y,m)){ paidN++; collected+=effRent(p, o.type==='counter'); } else { unpaidN++; owed+=effRent(p, o.type==='counter'); } }
   return {paidN, unpaidN, selfN, collected, owed, sRev, sCost, tRev, tCost};
 }
 function renderSummary(){
@@ -660,24 +660,19 @@ function openCounter(id){
   let y = viewY;
   f.innerHTML = `<h2>${esc(o.label || '電腦')}（出租）</h2>
     <div class="row"><div><label>台主名字</label><input name="owner" value="${esc(p.owner||'')}" maxlength="30"></div><div><label>台主月租金</label><input name="rent" type="number" inputmode="numeric" value="${esc(p.rent||'')}"></div></div>
-    <label style="display:flex;gap:8px;align-items:center;color:var(--text);margin-top:10px"><input type="checkbox" name="helper" style="width:20px;height:20px" ${p.helper?'checked':''}> 小幫手</label>
-    <div id="cHelpBox"><label>小幫手優惠減免金額（NT$）</label><input name="helperDiscount" type="number" inputmode="numeric" min="0" value="${esc(p.helperDiscount||'')}"><div class="muted" id="cEff" style="margin-top:4px"></div></div>
     <div class="row" style="margin-top:8px;flex-wrap:nowrap"><label style="margin:0;flex:none">年度</label><select id="cY">${[CUR_Y-1,CUR_Y,CUR_Y+1].map(v=>`<option ${v===y?'selected':''}>${v}</option>`).join('')}</select></div>
     <label>每月租金繳納（點選切換已繳）</label><div class="chips" id="cChips"></div><div class="muted" id="cCnt"></div>
     <div class="row" style="margin-top:12px"><button value="cancel" formnovalidate>取消</button><button class="pri" value="ok">儲存</button></div>`;
   const E = f.elements;
-  const drawHelp = ()=>{ const h = E.helper.checked; $('cHelpBox').style.display = h ? '' : 'none'; const r = num(E.rent.value), d = num(E.helperDiscount.value);
-    $('cEff').textContent = h ? `租金 ${r.toLocaleString('zh-TW')} − 小幫手 ${d.toLocaleString('zh-TW')} = ${Math.max(0,r-d).toLocaleString('zh-TW')}` : ''; };
   const drawChips = ()=>{ const ys = String(y); $('cChips').innerHTML = [...Array(12)].map((_,k)=>`<div class="chip ${isPaid(p,ys,k+1)?'on':''}" data-m="${k+1}">${k+1}月</div>`).join('');
     $('cChips').querySelectorAll('.chip').forEach(c=> c.onclick=()=>{ (p.rentPaid[ys] ||= {}); p.rentPaid[ys][c.dataset.m] = !p.rentPaid[ys][c.dataset.m]; c.classList.toggle('on'); cnt(); }); cnt(); };
   const cnt = ()=>{ const ys = String(y); $('cCnt').textContent = `${ys} 年已繳 ${[...Array(12)].filter((_,k)=>isPaid(p,ys,k+1)).length}/12 個月`; };
-  E.helper.onchange = drawHelp; E.rent.oninput = drawHelp; E.helperDiscount.oninput = drawHelp;
   $('cY').onchange = e=>{ y = +e.target.value; drawChips(); };
-  drawHelp(); drawChips();
+  drawChips();
   $('dlgObj').returnValue=''; $('dlgObj').showModal();
   $('dlgObj').onclose = async ()=>{
     if($('dlgObj').returnValue!=='ok') return;
-    const np = {owner:E.owner.value.trim(), rent:E.rent.value.trim(), helper:E.helper.checked, helperDiscount:E.helperDiscount.value.trim(), rentPaid:p.rentPaid, updatedAt:ts()};
+    const np = {owner:E.owner.value.trim(), rent:E.rent.value.trim(), rentPaid:p.rentPaid, updatedAt:ts()};
     priv[id] = {...(priv[id]||{}), ...np}; renderOwner();
     await F.setDoc(D('venues',V,'private',id), np, {merge:true}).then(()=>toast('已儲存')).catch(e=>toast('儲存失敗：'+e.code));
   };
